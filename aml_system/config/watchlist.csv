@@ -1,0 +1,16 @@
+entity_name,entity_type,country,list_type,added_date,notes
+GLOBAL SHADOW CORP,Organization,Iran,OFAC SDN,2019-01-15,OFAC Specially Designated National
+BLACK PEARL TRADING,Organization,North Korea,UN Consolidated,2018-06-20,UN Security Council sanctions
+AHMAD HASSAN MALIK,Individual,Pakistan,FATF,2020-03-10,Known money mule network
+YUSUF AL-FAROUQ,Individual,Syria,EU Consolidated,2017-11-25,Terror financing links
+GOLDEN PHOENIX LTD,Organization,British Virgin Islands,FATF,2021-05-05,Shell company - beneficial owner unknown
+SUNRISE FOREX INC,Organization,Cayman Islands,FinCEN,2022-01-30,Unregistered money service business
+VIKTOR PETROV,Individual,Russia,OFAC SDN,2014-03-15,Crimea-related sanctions
+ZHANG WEI ENTERPRISES,Organization,China,FinCEN Advisory,2023-02-14,Fentanyl precursor financier
+MIGUEL SANTOS,Individual,Panama,INTERPOL,2019-08-08,Drug trafficking financier
+EASTERN BRIDGE HOLDINGS,Organization,Myanmar,EU Consolidated,2021-02-01,Military junta-linked entity
+RAPID CASH SOLUTIONS,Organization,Nigeria,FinCEN,2020-07-22,Unlicensed MSB
+IBRAHIM AL-RASHID,Individual,Yemen,OFAC SDN,2016-12-05,Houthi financing
+PACIFIC TRUST GROUP,Organization,Vanuatu,FATF,2022-09-17,High-risk jurisdiction entity
+LEON VARGAS,Individual,Colombia,DEA Watch,2018-04-14,Cartel financial network
+DARK MATTER CAPITAL,Organization,Malta,EU AML Watch,2023-05-01,Suspicious crypto flows

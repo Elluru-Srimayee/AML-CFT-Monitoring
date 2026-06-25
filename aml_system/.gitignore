@@ -1,0 +1,68 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.pyd
+
+# Virtual environments
+venv/
+myenv/
+.venv/
+env/
+ENV/
+
+# Distribution/build
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+.cache/
+.nox/
+htmlcov/
+coverage.xml
+
+# Logs
+*.log
+*.log.*
+
+# IDE / editor settings
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Data outputs and generated files
+data/processed/
+data/outputs/
+
+# Optional: raw input data if you do not want it tracked
+# comment out if raw datasets should be in version control
+data/raw/
+
+# Environment files
+*.env
+.env.*
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# PyCharm
+*.iml
+
+# SQLite / DB files
+*.db
+*.sqlite3
+
+# macOS
+.DS_Store
+
+# Windows thumbnail cache
+Thumbs.db
