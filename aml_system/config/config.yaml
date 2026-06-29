@@ -59,10 +59,10 @@ rules:
 
   layering:
     enabled: true
-    score: 35
+    score: 25
     window_hours: 72        # Time window for chain / burst detection
-    min_chain_length: 3     # Min hops for linear chain
-    min_fan_degree: 3       # Min distinct accounts to trigger fan-in / fan-out
+    min_chain_length: 4     # Min hops for linear chain
+    min_fan_degree: 4       # Min distinct accounts to trigger fan-in / fan-out
     detect_fan_out: true    # Detect smurfing (one sender -> many receivers)
     detect_fan_in: true     # Detect aggregation (many senders -> one receiver)
 
