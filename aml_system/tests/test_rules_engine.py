@@ -259,3 +259,115 @@ class TestLayeringRule:
         df = make_txn_df(rows)
         result = self.rule.apply(df)
         assert set(result.triggered_indices) == {0, 1, 2}
+
+    def test_fan_out_flags_one_sender_many_receivers(self):
+        base = datetime(2023, 1, 1, 0, 0, 0)
+        rows = [
+            {
+                "Sender_account": "Z000",
+                "Receiver_account": "A000",
+                "Timestamp": base - timedelta(hours=1),
+            },
+            {
+                "Sender_account": "A000",
+                "Receiver_account": "B000",
+                "Timestamp": base,
+            },
+            {
+                "Sender_account": "A000",
+                "Receiver_account": "C000",
+                "Timestamp": base + timedelta(hours=1),
+            },
+            {
+                "Sender_account": "A000",
+                "Receiver_account": "D000",
+                "Timestamp": base + timedelta(hours=2),
+            },
+        ]
+        df = make_txn_df(rows)
+        result = self.rule.apply(df)
+        assert set(result.triggered_indices) == {0, 1, 2, 3}
+
+    def test_fan_in_flags_many_senders_one_receiver(self):
+        base = datetime(2023, 1, 1, 0, 0, 0)
+        rows = [
+            {
+                "Sender_account": "B000",
+                "Receiver_account": "A000",
+                "Timestamp": base,
+            },
+            {
+                "Sender_account": "C000",
+                "Receiver_account": "A000",
+                "Timestamp": base + timedelta(hours=1),
+            },
+            {
+                "Sender_account": "D000",
+                "Receiver_account": "A000",
+                "Timestamp": base + timedelta(hours=2),
+            },
+            {
+                "Sender_account": "A000",
+                "Receiver_account": "E000",
+                "Timestamp": base + timedelta(hours=3),
+            },
+        ]
+        df = make_txn_df(rows)
+        result = self.rule.apply(df)
+        assert set(result.triggered_indices) == {0, 1, 2, 3}
+
+    def test_non_passthrough_fan_out_is_not_flagged(self):
+        base = datetime(2023, 1, 1, 0, 0, 0)
+        rows = [
+            {
+                "Sender_account": "A000",
+                "Receiver_account": "B000",
+                "Timestamp": base,
+            },
+            {
+                "Sender_account": "A000",
+                "Receiver_account": "C000",
+                "Timestamp": base + timedelta(hours=1),
+            },
+            {
+                "Sender_account": "A000",
+                "Receiver_account": "D000",
+                "Timestamp": base + timedelta(hours=2),
+            },
+            {
+                "Sender_account": "A000",
+                "Receiver_account": "E000",
+                "Timestamp": base + timedelta(hours=3),
+            },
+        ]
+        df = make_txn_df(rows)
+        result = self.rule.apply(df)
+        assert result.triggered_indices == []
+
+    def test_scatter_gather_flags_scatter_then_gather(self):
+        base = datetime(2023, 1, 1, 0, 0, 0)
+        rows = [
+            {
+                "Sender_account": "A000",
+                "Receiver_account": "B000",
+                "Timestamp": base,
+            },
+            {
+                "Sender_account": "A000",
+                "Receiver_account": "C000",
+                "Timestamp": base + timedelta(hours=1),
+            },
+            {
+                "Sender_account": "B000",
+                "Receiver_account": "D000",
+                "Timestamp": base + timedelta(hours=2),
+            },
+            {
+                "Sender_account": "C000",
+                "Receiver_account": "D000",
+                "Timestamp": base + timedelta(hours=3),
+            },
+        ]
+        df = make_txn_df(rows)
+        result = self.rule.apply(df)
+        assert set(result.triggered_indices) == {0, 1, 2, 3}
