@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { fetchAlerts } from '../api'
 import { AlertCircle, Filter, ChevronDown } from 'lucide-react'
 
@@ -6,7 +7,7 @@ export default function Alerts() {
   const [alerts, setAlerts] = useState([])
   const [loading, setLoading] = useState(true)
   const [offset, setOffset] = useState(0)
-  const [limit, setLimit] = useState(50)
+  const [limit] = useState(50)
   const [total, setTotal] = useState(0)
   const [riskTierFilter, setRiskTierFilter] = useState('')
   const [stats, setStats] = useState({})
@@ -44,6 +45,8 @@ export default function Alerts() {
     }
   }
 
+  const navigate = useNavigate()
+
   const getRiskTextColor = (tier) => {
     switch (tier) {
       case 'CRITICAL':
@@ -58,6 +61,8 @@ export default function Alerts() {
   }
 
   const filteredAlerts = alerts
+  const startItem = total === 0 ? 0 : offset + 1
+  const endItem = Math.min(offset + limit, total)
 
   return (
     <div className="space-y-6">
@@ -94,7 +99,10 @@ export default function Alerts() {
             </label>
             <select
               value={riskTierFilter}
-              onChange={(e) => setRiskTierFilter(e.target.value)}
+              onChange={(e) => {
+                setRiskTierFilter(e.target.value)
+                setOffset(0)
+              }}
               className="input-field"
             >
               <option value="">All Tiers</option>
@@ -105,7 +113,10 @@ export default function Alerts() {
             </select>
           </div>
           <button
-            onClick={() => setRiskTierFilter('')}
+            onClick={() => {
+              setRiskTierFilter('')
+              setOffset(0)
+            }}
             className="btn-secondary"
           >
             Clear Filters
@@ -133,8 +144,12 @@ export default function Alerts() {
               </tr>
             </thead>
             <tbody>
-              {filteredAlerts.slice(0, limit).map((alert) => (
-                <tr key={alert.alert_id} className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+              {filteredAlerts.map((alert) => (
+                <tr
+                  key={alert.alert_id}
+                  className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+                  onClick={() => navigate(`/alerts/${alert.alert_id}`)}
+                >
                   <td className="font-semibold text-primary-600 dark:text-primary-400">{alert.alert_id}</td>
                   <td>
                     <span className={`badge ${getRiskBadgeColor(alert.risk_tier)}`}>
@@ -158,10 +173,10 @@ export default function Alerts() {
       </div>
 
       {/* Pagination */}
-      {filteredAlerts.length > limit && (
-        <div className="card flex justify-between items-center">
+      {total > limit && (
+        <div className="card flex flex-col sm:flex-row justify-between items-center gap-3">
           <span className="text-sm text-gray-600 dark:text-gray-400">
-            Showing {Math.min(limit, filteredAlerts.length)} of {filteredAlerts.length} alerts
+            Showing {total === 0 ? 0 : startItem}-{endItem} of {total} alerts
           </span>
           <div className="flex gap-2">
             <button
@@ -173,7 +188,7 @@ export default function Alerts() {
             </button>
             <button
               onClick={() => setOffset(offset + limit)}
-              disabled={offset + limit >= filteredAlerts.length}
+              disabled={offset + limit >= total}
               className="btn-secondary disabled:opacity-50"
             >
               Next

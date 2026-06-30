@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom'
 import Dashboard from './views/Dashboard'
 import Alerts from './views/Alerts'
+import AlertView from './views/AlertView'
 import SAR from './views/SAR'
 import CaseView from './views/CaseView'
 import { BarChart3, AlertCircle, FileText } from 'lucide-react'
@@ -34,7 +35,7 @@ function Navigation() {
         </div>
         <div className="navbar-menu">
           {links.map((item) => {
-            const isActive = location.pathname === item.to
+            const isActive = location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)
             const Icon = item.icon
             return (
               <Link
@@ -77,6 +78,7 @@ export default function App() {
                 }
               />
               <Route path="/alerts" element={<Alerts />} />
+              <Route path="/alerts/:alertId" element={<AlertView />} />
               <Route path="/sar" element={<SAR />} />
               <Route path="/cases/:caseId" element={<CaseView />} />
             </Routes>

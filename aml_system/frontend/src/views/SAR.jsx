@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { FileText, Download, CheckCircle, AlertTriangle, Loader } from 'lucide-react'
 import { fetchSARCandidates, generateSAR } from '../api'
 
@@ -8,6 +9,11 @@ export default function SAR() {
   const [generating, setGenerating] = useState({})
   const [error, setError] = useState('')
   const [generated, setGenerated] = useState({})
+
+  const generatedCandidateCount = new Set([
+    ...candidates.filter(c => c.sar_file).map(c => c.case_id),
+    ...Object.keys(generated),
+  ]).size
 
   async function loadCandidates() {
     setLoading(true)
@@ -114,7 +120,7 @@ export default function SAR() {
         <div className="card">
           <p className="text-gray-600 dark:text-gray-400 text-sm">Generated Reports</p>
           <p className="text-3xl font-bold text-success-600 dark:text-success-400">
-            {Object.keys(generated).length}
+            {generatedCandidateCount + Object.keys(generated).length}
           </p>
         </div>
       </div>
@@ -134,9 +140,9 @@ export default function SAR() {
                 <div>
                   <div className="flex items-start justify-between mb-4">
                     <div>
-                      <h3 className="text-lg font-bold text-primary-600 dark:text-primary-400">
-                        {candidate.case_id}
-                      </h3>
+                      <Link to={`/cases/${candidate.case_id}`} className="text-lg font-bold text-primary-600 hover:underline inline-flex items-center gap-2">
+                        <FileText className="w-4 h-4" /> {candidate.case_id}
+                      </Link>
                       <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                         Subject Account: <span className="font-mono">{candidate.subject_account}</span>
                       </p>
@@ -214,12 +220,14 @@ export default function SAR() {
 
                   {/* Action Button */}
                   <div className="flex gap-2">
-                    {generated[candidate.case_id] ? (
+                    {(generated[candidate.case_id] || candidate.sar_file) ? (
                       <div className="flex items-center gap-2 flex-1 px-4 py-3 rounded-lg bg-success-50 dark:bg-success-900 border border-success-200 dark:border-success-700">
                         <CheckCircle className="w-5 h-5 text-success-600 dark:text-success-400" />
                         <div>
                           <p className="text-sm font-semibold text-success-900 dark:text-success-100">SAR Generated</p>
-                          <p className="text-xs text-success-700 dark:text-success-300">{generated[candidate.case_id]}</p>
+                          <p className="text-xs text-success-700 dark:text-success-300">
+                            {generated[candidate.case_id] || (candidate.sar_file ? candidate.sar_file.split(/[/\\\\]/).pop() : '')}
+                          </p>
                         </div>
                       </div>
                     ) : (

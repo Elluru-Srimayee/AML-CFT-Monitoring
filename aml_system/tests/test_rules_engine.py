@@ -10,6 +10,8 @@ import pandas as pd
 import pytest
 from datetime import datetime, timedelta
 
+from src.alert_generation.alert_manager import Alert
+from src.investigation.case_builder import CaseBuilder
 from src.rules_engine.rule_large_txn import LargeTransactionRule
 from src.rules_engine.rule_high_risk_country import HighRiskCountryRule
 from src.rules_engine.rule_layering import LayeringRule
@@ -371,3 +373,93 @@ class TestLayeringRule:
         df = make_txn_df(rows)
         result = self.rule.apply(df)
         assert set(result.triggered_indices) == {0, 1, 2, 3}
+
+    def test_chain_amount_threshold_blocks_low_value_pattern(self):
+        base = datetime(2023, 1, 1, 0, 0, 0)
+        rows = [
+            {
+                "Sender_account": "A000",
+                "Receiver_account": "B000",
+                "Timestamp": base,
+                "Amount": 4000.0,
+            },
+            {
+                "Sender_account": "B000",
+                "Receiver_account": "C000",
+                "Timestamp": base + timedelta(hours=1),
+                "Amount": 4000.0,
+            },
+            {
+                "Sender_account": "C000",
+                "Receiver_account": "D000",
+                "Timestamp": base + timedelta(hours=2),
+                "Amount": 4000.0,
+            },
+        ]
+        df = make_txn_df(rows)
+        rule = LayeringRule({**self.config, "amount_threshold": 15000.0})
+        result = rule.apply(df)
+        assert result.triggered_indices == []
+
+    def test_chain_amount_threshold_allows_high_value_pattern(self):
+        base = datetime(2023, 1, 1, 0, 0, 0)
+        rows = [
+            {
+                "Sender_account": "A000",
+                "Receiver_account": "B000",
+                "Timestamp": base,
+                "Amount": 6000.0,
+            },
+            {
+                "Sender_account": "B000",
+                "Receiver_account": "C000",
+                "Timestamp": base + timedelta(hours=1),
+                "Amount": 6000.0,
+            },
+            {
+                "Sender_account": "C000",
+                "Receiver_account": "D000",
+                "Timestamp": base + timedelta(hours=2),
+                "Amount": 6000.0,
+            },
+        ]
+        df = make_txn_df(rows)
+        rule = LayeringRule({**self.config, "amount_threshold": 15000.0})
+        result = rule.apply(df)
+        assert set(result.triggered_indices) == {0, 1, 2}
+
+
+def test_case_builder_creates_cases_for_sender_and_receiver_accounts():
+    df = make_txn_df([
+        {
+            "Sender_account": "S001",
+            "Receiver_account": "R001",
+            "Timestamp": datetime(2023, 1, 1, 0, 0, 0),
+            "Amount": 20000.0,
+        }
+    ])
+    builder = CaseBuilder(df)
+    alert = Alert(
+        alert_id="AL-1",
+        txn_id=0,
+        timestamp="2023-01-01T00:00:00",
+        sender_account="S001",
+        receiver_account="R001",
+        amount=20000.0,
+        payment_currency="USD",
+        sender_location="United States",
+        receiver_location="United States",
+        payment_type="ACH",
+        risk_tier="HIGH",
+        risk_score=60,
+        triggered_rules="Layering",
+        rule_reasons="Layering chain",
+        is_laundering_gt=0,
+        laundering_type_gt="",
+    )
+
+    cases = builder.build_cases([alert])
+    subjects = {case.subject_account for case in cases}
+
+    assert "S001" in subjects
+    assert "R001" in subjects

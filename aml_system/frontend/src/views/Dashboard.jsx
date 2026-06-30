@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Bar } from 'react-chartjs-2'
 import { fetchSummary, runPipeline } from '../api'
 import { Play, TrendingUp, AlertTriangle, FileText, Loader } from 'lucide-react'
@@ -31,6 +32,11 @@ export default function Dashboard({ dashboardState, onDashboardStateChange }) {
   const [status, setStatus] = useState(dashboardState?.status || 'Ready')
   const [runResult, setRunResult] = useState(dashboardState?.runResult || null)
   const [loading, setLoading] = useState(false)
+  const [alertsVisible, setAlertsVisible] = useState(8)
+  const [casesVisible, setCasesVisible] = useState(8)
+  const alertsListRef = useRef(null)
+  const casesListRef = useRef(null)
+  const navigate = useNavigate()
 
   useEffect(() => {
     if (dashboardState?.summary) {
@@ -85,7 +91,7 @@ export default function Dashboard({ dashboardState, onDashboardStateChange }) {
     setLoading(true)
     setStatus(`Running AML pipeline for ${sample} transactions...`)
     try {
-      const data = await runPipeline(sample)
+      const data = await runPipeline(sample, 200, 200)
       persistState(data.summary, data, `Completed for ${sample} transactions`, String(sample))
     } catch (error) {
       persistState(summary, runResult, 'Pipeline failed. Check backend logs.', String(sample))
@@ -96,6 +102,13 @@ export default function Dashboard({ dashboardState, onDashboardStateChange }) {
 
   const alerts = runResult?.alerts || []
   const cases = runResult?.cases || []
+  const visibleAlerts = alerts.slice(0, alertsVisible)
+  const visibleCases = cases.slice(0, casesVisible)
+
+  useEffect(() => {
+    setAlertsVisible(8)
+    setCasesVisible(8)
+  }, [runResult])
 
   const getRiskBadgeColor = (tier) => {
     switch (tier) {
@@ -107,6 +120,20 @@ export default function Dashboard({ dashboardState, onDashboardStateChange }) {
         return 'badge-medium'
       default:
         return 'badge-low'
+    }
+  }
+
+  const handleAlertsScroll = (event) => {
+    const { scrollTop, clientHeight, scrollHeight } = event.currentTarget
+    if (scrollTop + clientHeight >= scrollHeight - 24) {
+      setAlertsVisible((value) => Math.min(value + 8, alerts.length))
+    }
+  }
+
+  const handleCasesScroll = (event) => {
+    const { scrollTop, clientHeight, scrollHeight } = event.currentTarget
+    if (scrollTop + clientHeight >= scrollHeight - 24) {
+      setCasesVisible((value) => Math.min(value + 8, cases.length))
     }
   }
 
@@ -262,9 +289,17 @@ export default function Dashboard({ dashboardState, onDashboardStateChange }) {
                 Recent Alerts ({alerts.length})
               </h3>
               {alerts.length > 0 ? (
-                <div className="space-y-3 max-h-96 overflow-y-auto">
-                  {alerts.slice(0, 8).map((alert) => (
-                    <div key={alert.alert_id} className="p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                <div
+                  ref={alertsListRef}
+                  onScroll={handleAlertsScroll}
+                  className="space-y-3 max-h-96 overflow-y-auto"
+                >
+                  {visibleAlerts.map((alert) => (
+                    <div
+                    key={alert.alert_id}
+                    className="p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+                    onClick={() => navigate(`/alerts/${alert.alert_id}`)}
+                  >
                       <div className="flex justify-between items-start gap-2 mb-2">
                         <span className="font-semibold text-sm truncate">{alert.alert_id}</span>
                         <span className={`badge ${getRiskBadgeColor(alert.risk_tier)}`}>{alert.risk_tier}</span>
@@ -295,9 +330,17 @@ export default function Dashboard({ dashboardState, onDashboardStateChange }) {
                 Generated Cases ({cases.length})
               </h3>
               {cases.length > 0 ? (
-                <div className="space-y-3 max-h-96 overflow-y-auto">
-                  {cases.slice(0, 8).map((caseItem) => (
-                    <div key={caseItem.case_id} className="p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                <div
+                  ref={casesListRef}
+                  onScroll={handleCasesScroll}
+                  className="space-y-3 max-h-96 overflow-y-auto"
+                >
+                  {visibleCases.map((caseItem) => (
+                    <div
+                      key={caseItem.case_id}
+                      className="p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+                      onClick={() => navigate(`/cases/${caseItem.case_id}`)}
+                    >
                       <div className="flex justify-between items-start gap-2 mb-2">
                         <span className="font-semibold text-sm truncate">{caseItem.case_id}</span>
                         <span className={`badge ${getRiskBadgeColor(caseItem.risk_tier)}`}>{caseItem.status}</span>

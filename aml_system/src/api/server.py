@@ -51,6 +51,44 @@ def _serialize_for_json(value: Any) -> Any:
     return value
 
 
+def _auto_generate_sar_reports(cases: list[Any]) -> list[str]:
+    """Generate SAR reports automatically for cases with sanctions hits."""
+    from src.sar_reporting.sar_generator import SARGenerator
+    from src.sar_reporting.sar_exporter import SARExporter
+
+    generator = SARGenerator(config_path="config/config.yaml")
+    exporter = SARExporter(config_path="config/config.yaml")
+    generated_files: list[str] = []
+
+    for case in cases:
+        sanctions_hits = case.get("sanctions_hits") if isinstance(case, dict) else getattr(case, "sanctions_hits", None)
+        if not sanctions_hits:
+            continue
+        try:
+            case_id = case.get("case_id") if isinstance(case, dict) else case.case_id
+            sar_data = generator.generate(case)
+            sar_file = exporter.export(sar_data, case_id=case_id)
+            exporter.export_json(sar_data, case_id=case_id)
+            generated_files.append(str(sar_file))
+        except Exception as exc:
+            # Don't break the pipeline if SAR generation fails for one case.
+            case_id = case.get("case_id") if isinstance(case, dict) else getattr(case, "case_id", "UNKNOWN")
+            print(f"Warning: failed to auto-generate SAR for {case_id}: {exc}")
+    return generated_files
+
+
+def _find_sar_for_case(case_id: str) -> Optional[str]:
+    """Resolve the generated SAR file path for a case, if it exists."""
+    cfg = load_config("config/config.yaml")
+    sar_dir = Path(cfg.get("sar", {}).get("output_dir", "data/outputs/sar"))
+    if not sar_dir.exists():
+        return None
+    candidates = list(sar_dir.glob(f"*_{case_id}.pdf"))
+    if candidates:
+        return str(candidates[0])
+    return None
+
+
 # Serve frontend static build if present
 FRONTEND_BUILD = Path(__file__).parent.parent / "frontend" / "build"
 if FRONTEND_BUILD.exists():
@@ -76,7 +114,7 @@ def get_transactions(sample: Optional[int] = None):
 
 
 @app.get("/api/run")
-def run_pipeline(sample: Optional[int] = None, skip_sar: bool = True):
+def run_pipeline(sample: Optional[int] = None, skip_sar: bool = False, alert_limit: int = 100, case_limit: int = 100):
     """Run the core pipeline (ingest → rules → scoring → alerts → cases).
     Returns a short summary and small datasets for UI consumption.
     """
@@ -99,6 +137,10 @@ def run_pipeline(sample: Optional[int] = None, skip_sar: bool = True):
         # Persist generated outputs so the UI and pipeline behave like the CLI run
         alert_path = alert_mgr.save(alerts)
         case_builder.save_cases(cases)
+
+        generated_sars = []
+        if not skip_sar:
+            generated_sars = _auto_generate_sar_reports(cases)
 
         # Save a labeled output dataset similar to main.py
         RULE_TO_TYPE = {
@@ -141,12 +183,13 @@ def run_pipeline(sample: Optional[int] = None, skip_sar: bool = True):
                 "alerts_csv": alert_path,
                 "cases_dir": str(Path("data/outputs/cases")),
                 "labeled_transactions": labeled_path,
+                "generated_sars": generated_sars,
             },
         }
 
         # Return a compact sample of alerts and cases for the UI
-        alerts_sample = [_serialize_for_json(asdict(a)) for a in alerts[:50]]
-        cases_summary = [_serialize_for_json(asdict(c)) for c in cases[:50]]
+        alerts_sample = [_serialize_for_json(asdict(a)) for a in alerts[:max(1, alert_limit)]]
+        cases_summary = [_serialize_for_json(asdict(c)) for c in cases[:max(1, case_limit)]]
 
         return {
             "summary": summary,
@@ -212,10 +255,12 @@ def alert_detail(alert_id: str):
     df = mgr.load_alerts()
     if df.empty:
         raise HTTPException(status_code=404, detail="No alerts available")
-    matches = df[df["alert_id"] == alert_id]
+    if "alert_id" not in df.columns:
+        raise HTTPException(status_code=500, detail="Alerts file is malformed")
+    matches = df[df["alert_id"].astype(str) == alert_id]
     if matches.empty:
         raise HTTPException(status_code=404, detail="Alert not found")
-    return matches.iloc[0].to_dict()
+    return _serialize_for_json(matches.iloc[0].to_dict())
 
 
 @app.get("/api/cases")
@@ -232,7 +277,7 @@ def case_detail(case_id: str):
     try:
         cb = CaseBuilder(full_df=None, config_path="config/config.yaml")
         case = cb.load_case(case_id)
-        return case
+        return JSONResponse(content=_serialize_for_json(case))
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Case not found")
     except Exception as e:
@@ -255,7 +300,11 @@ def sar_candidates():
                     case = cb.load_case(filename.replace('.json', ''))
                     # Only include escalated cases
                     if case.get('status') == 'ESCALATED' or case.get('recommendation') == 'SAR':
-                        candidates.append(_serialize_for_json(case))
+                        case_json = _serialize_for_json(case)
+                        sar_file = _find_sar_for_case(case_json.get('case_id') or filename.replace('.json', ''))
+                        if sar_file:
+                            case_json['sar_file'] = sar_file
+                        candidates.append(case_json)
                 except Exception:
                     pass
 
@@ -274,19 +323,22 @@ def generate_sar(request_data: dict):
 
         # Load the case
         cb = CaseBuilder(full_df=None, config_path="config/config.yaml")
-        case = cb.load_case(case_id)
+        case_data = cb.load_case(case_id)
+        from src.investigation.case_builder import InvestigationCase
+        case = InvestigationCase(**case_data)
 
         # Import SAR generator
         from src.sar_reporting.sar_generator import SARGenerator
+        from src.sar_reporting.sar_exporter import SARExporter
 
         # Generate SAR
         gen = SARGenerator(config_path="config/config.yaml")
         sar = gen.generate(case)
 
         # Persist SAR
-        from src.sar_reporting.sar_exporter import SARExporter
         exporter = SARExporter(config_path="config/config.yaml")
-        sar_file = exporter.export_to_pdf(sar)
+        sar_file = exporter.export(sar, case_id=case_id)
+        exporter.export_json(sar, case_id=case_id)
 
         return {
             "success": True,

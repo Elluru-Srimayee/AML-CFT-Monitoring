@@ -69,7 +69,7 @@ class CaseBuilder:
 
     def __init__(
         self,
-        full_df: pd.DataFrame,
+        full_df: Optional[pd.DataFrame] = None,
         config_path: str = "config/config.yaml",
     ):
         cfg = load_config(config_path)
@@ -77,26 +77,29 @@ class CaseBuilder:
         self.cases_dir = Path(inv_cfg["cases_dir"])
         self.auto_escalate_tiers = set(inv_cfg.get("auto_escalate_tiers", ["CRITICAL"]))
 
-        self.profiler = CustomerProfiler(full_df, config_path=config_path)
-        self.analyzer = PatternAnalyzer(full_df)
+        safe_df = full_df if full_df is not None else pd.DataFrame()
+        self.profiler = CustomerProfiler(safe_df, config_path=config_path)
+        self.analyzer = PatternAnalyzer(safe_df)
         self.sanctions = SanctionsChecker(config_path)
 
     # ── Public API ────────────────────────────────────────────────────────
 
     def build_cases(self, alerts: list[Alert]) -> list[InvestigationCase]:
         """
-        Build one InvestigationCase per unique Sender_account across all alerts.
+        Build one InvestigationCase per involved account across all alerts.
 
         Args:
             alerts: All alerts from AlertManager.create_alerts()
 
         Returns:
-            List of InvestigationCase objects (one per subject account).
+            List of InvestigationCase objects (one per involved account).
         """
-        # Group alerts by sender account
         by_account: dict[str, list[Alert]] = {}
         for alert in alerts:
-            by_account.setdefault(alert.sender_account, []).append(alert)
+            for account in {alert.sender_account, alert.receiver_account}:
+                if not account:
+                    continue
+                by_account.setdefault(account, []).append(alert)
 
         cases: list[InvestigationCase] = []
         log.info(f"Building {len(by_account)} cases from {len(alerts)} alerts …")
@@ -160,13 +163,14 @@ class CaseBuilder:
         profile: CustomerProfile = self.profiler.build_profile(account)
         countries = profile.countries_involved
 
-        # Sanctions check — use account, customer details, and related receiver accounts
+        # Sanctions check — use account, customer details, and related sender/receiver accounts
         entities_to_check = [account]
         if profile.full_name:
             entities_to_check.append(profile.full_name)
         if profile.government_id:
             entities_to_check.append(profile.government_id)
         entities_to_check += [a.receiver_account for a in alerts[:10]]
+        entities_to_check += [a.sender_account for a in alerts[:10]]
         # preserve order and uniqueness
         seen = set()
         entities_to_check = [x for x in entities_to_check if x and not (x in seen or seen.add(x))]

@@ -38,6 +38,7 @@ class LayeringRule(BaseRule):
         self.window_hours = int(config.get("window_hours", 120))
         self.min_chain_length = int(config.get("min_chain_length", 3))
         self.min_fan_degree = int(config.get("min_fan_degree", 3))
+        self.amount_threshold = float(config.get("amount_threshold", config.get("min_chain_amount", 10000.0)))
         self.detect_fan_out = bool(config.get("detect_fan_out", True))
         self.detect_fan_in = bool(config.get("detect_fan_in", True))
 
@@ -58,10 +59,21 @@ class LayeringRule(BaseRule):
         reasons: dict[int, str] = {}
 
         def flag_group(indices: list[int], reason: str) -> None:
+            total_amount = 0.0
+            for idx in indices:
+                raw_amount = df.loc[idx, "Amount"]
+                amount_value = float(raw_amount) if not pd.isna(raw_amount) else 0.0
+                total_amount += amount_value
+
+            if total_amount < self.amount_threshold:
+                return
+
             for idx in indices:
                 if idx not in triggered_indices:
                     triggered_indices.add(idx)
-                    reasons[idx] = reason
+                    reasons[idx] = (
+                        f"{reason} (chain amount: {total_amount:,.2f}, threshold: {self.amount_threshold:,.2f})"
+                    )
 
         # Build full adjacency maps for all rules
         adjacency_out: dict[str, list[tuple]] = defaultdict(list)
