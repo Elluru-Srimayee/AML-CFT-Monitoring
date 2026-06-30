@@ -39,13 +39,8 @@ coverage.xml
 *~
 .DS_Store
 
-# Data outputs and generated files
-data/processed/
-data/outputs/
 
-# Optional: raw input data if you do not want it tracked
-# comment out if raw datasets should be in version control
-data/raw/
+
 
 # Environment files
 *.env
