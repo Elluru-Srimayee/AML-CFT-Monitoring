@@ -18,6 +18,7 @@ from src.rules_engine.rule_rapid_movement import RapidMovementRule
 from src.rules_engine.rule_smurfing import SmurfingRule
 from src.utils.helpers import load_config
 from src.utils.logger import get_logger
+from src.rules_engine.rule_cash_business_ai import CashBusinessAIRule
 
 log = get_logger(__name__)
 
@@ -44,6 +45,7 @@ class RulesEngine:
             SmurfingRule(rules_cfg["smurfing"]),
             LayeringRule(rules_cfg["layering"]),
             RapidMovementRule(rules_cfg["rapid_movement"]),
+            CashBusinessAIRule(rules_cfg["cash_business_ai"]),
         ]
 
         enabled = [r.name for r in self.rules if r.enabled]

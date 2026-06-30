@@ -192,3 +192,55 @@ class TransactionLoader:
             f"Laundering (ground truth): {laundering_count:,} ({100*laundering_count/len(df):.2f}%) | "
             f"Date range: {df['Timestamp'].min()} → {df['Timestamp'].max()}"
         )
+
+
+def enrich_with_customer_data(
+    self,
+    transactions: pd.DataFrame,
+    customer_csv: str,
+) -> pd.DataFrame:
+    """
+    Merge customer master with transaction dataset.
+
+    Sender_account
+            ↓
+    Account Number
+
+    Returns
+    -------
+    Enriched transaction dataframe.
+    """
+
+    customers = pd.read_csv(customer_csv)
+
+    customers.columns = customers.columns.str.strip()
+
+    transactions = transactions.copy()
+
+    transactions["Sender_account"] = (
+        transactions["Sender_account"]
+        .astype(str)
+        .str.strip()
+    )
+
+    customers["Account Number"] = (
+        customers["Account Number"]
+        .astype(str)
+        .str.strip()
+    )
+
+    merged = transactions.merge(
+
+        customers,
+
+        left_on="Sender_account",
+
+        right_on="Account Number",
+
+        how="left",
+
+        validate="many_to_one",
+
+    )
+
+    return merged
