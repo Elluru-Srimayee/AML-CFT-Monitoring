@@ -1,3 +1,4 @@
+import json
 import math
 import os
 from dataclasses import asdict
@@ -350,4 +351,30 @@ def generate_sar(request_data: dict):
         raise HTTPException(status_code=404, detail="Case not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"SAR generation failed: {str(e)}")
+
+
+@app.get("/api/sar/{case_id}")
+def get_sar_report(case_id: str):
+    """Fetch a generated SAR report by case_id."""
+    try:
+        sar_dir = CFG.get("sar_reporting", {}).get("output_dir", "data/outputs/sar")
+        sar_path = None
+
+        # Find the SAR JSON file for this case
+        for filename in os.listdir(sar_dir):
+            if filename.endswith('.json') and case_id in filename:
+                sar_path = Path(sar_dir) / filename
+                break
+
+        if not sar_path or not sar_path.exists():
+            raise HTTPException(status_code=404, detail=f"SAR report not found for case {case_id}")
+
+        with open(sar_path, "r", encoding="utf-8") as f:
+            sar_data = json.load(f)
+
+        return {"success": True, "sar": sar_data}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"SAR report not found for case {case_id}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 

@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { FileText, Download, CheckCircle, AlertTriangle, Loader } from 'lucide-react'
+import { FileText, Download, CheckCircle, AlertTriangle, Loader, RefreshCw } from 'lucide-react'
 import { fetchSARCandidates, generateSAR } from '../api'
+
+const SAR_CACHE_KEY = 'aml_sar_candidates_cache'
+const SAR_CACHE_TIMESTAMP_KEY = 'aml_sar_candidates_timestamp'
 
 export default function SAR() {
   const [candidates, setCandidates] = useState([])
@@ -9,18 +12,48 @@ export default function SAR() {
   const [generating, setGenerating] = useState({})
   const [error, setError] = useState('')
   const [generated, setGenerated] = useState({})
+  const [selectedFilter, setSelectedFilter] = useState('all')
+  const [isCached, setIsCached] = useState(false)
 
   const generatedCandidateCount = new Set([
     ...candidates.filter(c => c.sar_file).map(c => c.case_id),
     ...Object.keys(generated),
   ]).size
 
-  async function loadCandidates() {
+  const filteredCandidates = candidates.filter(candidate => {
+    if (selectedFilter === 'escalated') {
+      return candidate.risk_tier === 'CRITICAL'
+    } else if (selectedFilter === 'generated') {
+      return generated[candidate.case_id] || candidate.sar_file
+    }
+    return true // 'all' filter
+  })
+
+  async function loadCandidates(forceRefresh = false) {
     setLoading(true)
     setError('')
     try {
+      // Try to get from cache first if not forcing refresh
+      if (!forceRefresh) {
+        const cached = localStorage.getItem(SAR_CACHE_KEY)
+        if (cached) {
+          const cachedData = JSON.parse(cached)
+          setCandidates(cachedData)
+          setIsCached(true)
+          setLoading(false)
+          return
+        }
+      }
+
+      // Fetch from API
       const data = await fetchSARCandidates()
-      setCandidates(data.candidates || data.sar_candidates || [])
+      const candidatesData = data.candidates || data.sar_candidates || []
+      setCandidates(candidatesData)
+      setIsCached(false)
+
+      // Save to cache
+      localStorage.setItem(SAR_CACHE_KEY, JSON.stringify(candidatesData))
+      localStorage.setItem(SAR_CACHE_TIMESTAMP_KEY, new Date().toISOString())
     } catch (err) {
       setError('Failed to load SAR candidates')
       console.error(err)
@@ -29,8 +62,25 @@ export default function SAR() {
     }
   }
 
+  function clearCache() {
+    localStorage.removeItem(SAR_CACHE_KEY)
+    localStorage.removeItem(SAR_CACHE_TIMESTAMP_KEY)
+    setIsCached(false)
+    loadCandidates(true)
+  }
+
   useEffect(() => {
-    loadCandidates()
+    // Check if this is a new session (app restart)
+    const sessionMarker = sessionStorage.getItem('aml_sar_session_loaded')
+    if (!sessionMarker) {
+      // First load in this session - clear cache to ensure fresh data
+      localStorage.removeItem(SAR_CACHE_KEY)
+      sessionStorage.setItem('aml_sar_session_loaded', 'true')
+      loadCandidates(true)
+    } else {
+      // Subsequent loads - use cache if available
+      loadCandidates(false)
+    }
   }, [])
 
   async function handleGenerateSAR(caseId) {
@@ -105,19 +155,46 @@ export default function SAR() {
         </div>
       )}
 
-      {/* Stats */}
+      {/* Stats - Clickable Filters */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="card">
+        <div
+          onClick={() => setSelectedFilter('all')}
+          className={`card cursor-pointer transition-all ${
+            selectedFilter === 'all'
+              ? 'border-2 border-primary-600 shadow-lg bg-primary-50 dark:bg-primary-900 dark:border-primary-400'
+              : 'hover:shadow-md'
+          }`}
+          role="button"
+          tabIndex={0}
+        >
           <p className="text-gray-600 dark:text-gray-400 text-sm">Total Candidates</p>
           <p className="text-3xl font-bold text-primary-600 dark:text-primary-400">{candidates.length}</p>
         </div>
-        <div className="card">
+        <div
+          onClick={() => setSelectedFilter('escalated')}
+          className={`card cursor-pointer transition-all ${
+            selectedFilter === 'escalated'
+              ? 'border-2 border-danger-600 shadow-lg bg-danger-50 dark:bg-danger-900 dark:border-danger-400'
+              : 'hover:shadow-md'
+          }`}
+          role="button"
+          tabIndex={0}
+        >
           <p className="text-gray-600 dark:text-gray-400 text-sm">Escalated (CRITICAL)</p>
           <p className="text-3xl font-bold text-danger-600 dark:text-danger-400">
             {candidates.filter(c => c.risk_tier === 'CRITICAL').length}
           </p>
         </div>
-        <div className="card">
+        <div
+          onClick={() => setSelectedFilter('generated')}
+          className={`card cursor-pointer transition-all ${
+            selectedFilter === 'generated'
+              ? 'border-2 border-success-600 shadow-lg bg-success-50 dark:bg-success-900 dark:border-success-400'
+              : 'hover:shadow-md'
+          }`}
+          role="button"
+          tabIndex={0}
+        >
           <p className="text-gray-600 dark:text-gray-400 text-sm">Generated Reports</p>
           <p className="text-3xl font-bold text-success-600 dark:text-success-400">
             {generatedCandidateCount + Object.keys(generated).length}
@@ -132,8 +209,8 @@ export default function SAR() {
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
             <p className="text-gray-600 dark:text-gray-400 mt-2">Loading SAR candidates...</p>
           </div>
-        ) : candidates.length > 0 ? (
-          candidates.map((candidate) => (
+        ) : filteredCandidates.length > 0 ? (
+          filteredCandidates.map((candidate) => (
             <div key={candidate.case_id} className="card">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Case Details */}
@@ -221,17 +298,19 @@ export default function SAR() {
                   {/* Action Button */}
                   <div className="flex gap-2">
                     {(generated[candidate.case_id] || candidate.sar_file) ? (
-                      <div className="flex items-center gap-2 flex-1 px-4 py-3 rounded-lg bg-success-50 dark:bg-success-900 border border-success-200 dark:border-success-700">
-                        <CheckCircle className="w-5 h-5 text-success-600 dark:text-success-400" />
-                        <div>
+                      <Link
+                        to={`/sar/${candidate.case_id}`}
+                        className="flex items-center gap-2 flex-1 px-4 py-3 rounded-lg bg-success-50 dark:bg-success-900 border border-success-200 dark:border-success-700 hover:shadow-lg transition-all"
+                      >
+                        <CheckCircle className="w-5 h-5 text-success-600 dark:text-success-400 flex-shrink-0" />
+                        <div className="text-left">
                           <p className="text-sm font-semibold text-success-900 dark:text-success-100">SAR Generated</p>
                           <p className="text-xs text-success-700 dark:text-success-300">
                             {generated[candidate.case_id] || (candidate.sar_file ? candidate.sar_file.split(/[/\\\\]/).pop() : '')}
                           </p>
                         </div>
-                      </div>
-                    ) : (
-                      <button
+                      </Link>
+                    ) : (                      <button
                         onClick={() => handleGenerateSAR(candidate.case_id)}
                         disabled={generating[candidate.case_id]}
                         className="btn-primary flex items-center gap-2 flex-1 justify-center disabled:opacity-50"

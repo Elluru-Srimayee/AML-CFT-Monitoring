@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Bar } from 'react-chartjs-2'
 import { fetchSummary, runPipeline } from '../api'
-import { Play, TrendingUp, AlertTriangle, FileText, Loader } from 'lucide-react'
+import { Play, TrendingUp, AlertTriangle, FileText, Loader, RefreshCw } from 'lucide-react'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -26,14 +26,17 @@ ChartJS.register(
   Legend
 )
 
+const DASHBOARD_CACHE_KEY = 'aml_dashboard_data'
+
 export default function Dashboard({ dashboardState, onDashboardStateChange }) {
   const [summary, setSummary] = useState(dashboardState?.summary || null)
-  const [sampleInput, setSampleInput] = useState(dashboardState?.sampleInput || '1000')
   const [status, setStatus] = useState(dashboardState?.status || 'Ready')
   const [runResult, setRunResult] = useState(dashboardState?.runResult || null)
   const [loading, setLoading] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const [alertsVisible, setAlertsVisible] = useState(8)
   const [casesVisible, setCasesVisible] = useState(8)
+  const [isCached, setIsCached] = useState(false)
   const alertsListRef = useRef(null)
   const casesListRef = useRef(null)
   const navigate = useNavigate()
@@ -43,25 +46,93 @@ export default function Dashboard({ dashboardState, onDashboardStateChange }) {
       setSummary(dashboardState.summary)
       setRunResult(dashboardState.runResult || null)
       setStatus(dashboardState.status || 'Ready')
-      setSampleInput(dashboardState.sampleInput || '1000')
+      setIsCached(true)
       return
     }
 
-    fetchSummary(100).then(d => setSummary(d.summary)).catch(() => {})
+    // Try to load from cache first
+    const cached = localStorage.getItem(DASHBOARD_CACHE_KEY)
+    if (cached) {
+      try {
+        const cachedData = JSON.parse(cached)
+        setSummary(cachedData.summary)
+        setRunResult(cachedData.runResult)
+        setStatus(cachedData.status || 'Ready')
+        setIsCached(true)
+        return
+      } catch (e) {
+        console.error('Failed to parse cached dashboard data', e)
+      }
+    }
+
+    // If no cache, fetch from API
+    fetchSummary()
+      .then(d => {
+        setSummary(d.summary)
+        setIsCached(false)
+        // Cache the fetched data
+        localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify({
+          summary: d.summary,
+          runResult: null,
+          status: 'Ready'
+        }))
+      })
+      .catch(() => {
+        setStatus('Failed to load dashboard data')
+      })
   }, [dashboardState])
 
-  function persistState(nextSummary, nextRunResult, nextStatus, nextSampleInput) {
+  function persistState(nextSummary, nextRunResult, nextStatus) {
     const nextState = {
       summary: nextSummary,
       runResult: nextRunResult,
       status: nextStatus,
-      sampleInput: nextSampleInput,
     }
     setSummary(nextSummary)
     setRunResult(nextRunResult)
     setStatus(nextStatus)
-    setSampleInput(nextSampleInput)
+    setIsCached(false)
+    
+    // Update cache with new data
+    localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(nextState))
     onDashboardStateChange?.(nextState)
+  }
+
+  async function handleRefreshData() {
+    setRefreshing(true)
+    try {
+      // Force fetch from backend
+      const data = await fetchSummary()
+      setSummary(data.summary)
+      setStatus('Data refreshed from backend')
+      setIsCached(false)
+      
+      // Update cache
+      localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify({
+        summary: data.summary,
+        runResult: runResult,
+        status: 'Data refreshed from backend'
+      }))
+      
+      // Clear the state cache to sync with backend
+      onDashboardStateChange?.({
+        summary: data.summary,
+        runResult: runResult,
+        status: 'Data refreshed from backend'
+      })
+    } catch (error) {
+      setStatus('Failed to refresh data from backend')
+      console.error(error)
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  function clearAllCache() {
+    localStorage.removeItem(DASHBOARD_CACHE_KEY)
+    sessionStorage.clear()
+    onDashboardStateChange?.(null)
+    window.location.reload()
   }
 
   const byTier = summary?.rule_summary || {}
@@ -82,19 +153,15 @@ export default function Dashboard({ dashboardState, onDashboardStateChange }) {
   }
 
   async function handleRun() {
-    const sample = Number(sampleInput)
-    if (!sample || sample <= 0) {
-      setStatus('Please enter a valid positive number of transactions')
-      return
-    }
-
     setLoading(true)
-    setStatus(`Running AML pipeline for ${sample} transactions...`)
+    setStatus('Running AML pipeline with a random sample file...')
     try {
-      const data = await runPipeline(sample, 200, 200)
-      persistState(data.summary, data, `Completed for ${sample} transactions`, String(sample))
+      const data = await runPipeline(undefined, 200, 200)
+      // Clear cache when new pipeline run is successful
+      localStorage.removeItem(DASHBOARD_CACHE_KEY)
+      persistState(data.summary, data, 'Completed using a sample transaction file')
     } catch (error) {
-      persistState(summary, runResult, 'Pipeline failed. Check backend logs.', String(sample))
+      persistState(summary, runResult, 'Pipeline failed. Check backend logs.')
     } finally {
       setLoading(false)
     }
@@ -141,25 +208,35 @@ export default function Dashboard({ dashboardState, onDashboardStateChange }) {
     <div className="space-y-8">
       {/* Pipeline Control Section */}
       <div className="card">
-        <div className="mb-6">
-          <h2 className="text-2xl font-bold mb-2 flex items-center gap-2">
-            <TrendingUp className="w-6 h-6 text-primary-600 dark:text-primary-400" />
-            AML Pipeline Execution
-          </h2>
-          <p className="text-gray-600 dark:text-gray-400">Run the AML pipeline on a sample of transactions</p>
+        <div className="mb-6 flex items-start justify-between">
+          <div>
+            <h2 className="text-2xl font-bold mb-2 flex items-center gap-2">
+              <TrendingUp className="w-6 h-6 text-primary-600 dark:text-primary-400" />
+              AML Pipeline Execution
+            </h2>
+            <p className="text-gray-600 dark:text-gray-400">Run the AML pipeline on a sample of transactions</p>
+            {isCached && (
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                ✓ Data cached from local storage
+              </p>
+            )}
+          </div>
+          <button
+            onClick={handleRefreshData}
+            disabled={refreshing || loading}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 text-gray-900 dark:text-gray-100 font-semibold text-sm"
+            title="Refresh data from backend server"
+          >
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-4 items-end">
           <div className="flex-1">
-            <label className="block text-sm font-medium mb-2">Number of Transactions</label>
-            <input
-              type="number"
-              min="1"
-              value={sampleInput}
-              onChange={(e) => setSampleInput(e.target.value)}
-              className="input-field"
-              placeholder="Enter number of transactions"
-            />
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              The pipeline will automatically pick one of the bundled sample transaction files and process all of its transactions.
+            </p>
           </div>
           <button
             onClick={handleRun}

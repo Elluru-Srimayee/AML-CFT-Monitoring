@@ -4,6 +4,7 @@ import Dashboard from './views/Dashboard'
 import Alerts from './views/Alerts'
 import AlertView from './views/AlertView'
 import SAR from './views/SAR'
+import SARDetail from './views/SARDetail'
 import CaseView from './views/CaseView'
 import { BarChart3, AlertCircle, FileText } from 'lucide-react'
 
@@ -80,6 +81,7 @@ export default function App() {
               <Route path="/alerts" element={<Alerts />} />
               <Route path="/alerts/:alertId" element={<AlertView />} />
               <Route path="/sar" element={<SAR />} />
+              <Route path="/sar/:caseId" element={<SARDetail />} />
               <Route path="/cases/:caseId" element={<CaseView />} />
             </Routes>
           </div>

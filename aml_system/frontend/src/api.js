@@ -17,14 +17,20 @@ const handleResponse = async (res) => {
   return content ? JSON.parse(content) : null
 }
 
-export async function fetchSummary(sample = 100, alertLimit = 100, caseLimit = 100) {
-  const params = new URLSearchParams({ sample: String(sample), alert_limit: String(alertLimit), case_limit: String(caseLimit) })
+export async function fetchSummary(sample, alertLimit = 100, caseLimit = 100) {
+  const params = new URLSearchParams({ alert_limit: String(alertLimit), case_limit: String(caseLimit) })
+  if (sample !== undefined && sample !== null && sample !== '') {
+    params.set('sample', String(sample))
+  }
   const res = await fetch(`${API_BASE}/api/run?${params.toString()}`)
   return res.json()
 }
 
 export async function runPipeline(sample, alertLimit = 100, caseLimit = 100) {
-  const params = new URLSearchParams({ sample: String(sample), alert_limit: String(alertLimit), case_limit: String(caseLimit) })
+  const params = new URLSearchParams({ alert_limit: String(alertLimit), case_limit: String(caseLimit) })
+  if (sample !== undefined && sample !== null && sample !== '') {
+    params.set('sample', String(sample))
+  }
   const res = await fetch(`${API_BASE}/api/run?${params.toString()}`)
   return res.json()
 }
@@ -56,6 +62,11 @@ export async function generateSAR(caseId) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ case_id: caseId }),
   })
+  return res.json()
+}
+
+export async function fetchSARDetail(caseId) {
+  const res = await fetch(`${API_BASE}/api/sar/${caseId}`)
   return res.json()
 }
 
