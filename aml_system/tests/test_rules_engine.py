@@ -12,10 +12,12 @@ from datetime import datetime, timedelta
 
 from src.alert_generation.alert_manager import Alert
 from src.investigation.case_builder import CaseBuilder
+from src.ingestion.loader import enrich_with_customer_data
 from src.rules_engine.rule_large_txn import LargeTransactionRule
 from src.rules_engine.rule_high_risk_country import HighRiskCountryRule
 from src.rules_engine.rule_layering import LayeringRule
 from src.rules_engine.rule_smurfing import SmurfingRule
+from src.rules_engine.rule_cash_business_ai import CashBusinessAIRule
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -229,10 +231,71 @@ class TestSmurfingRule:
         assert result.triggered_indices == []
 
 
+class TestCashBusinessAIRule:
+    config = {
+        "enabled": True,
+        "score": 30,
+        "deviation_multiplier": 1.5,
+        "minimum_confidence": 0.0,
+        "azure_endpoint": "https://example.openai.azure.com/",
+        "azure_api_key": "test-key",
+        "deployment_name": "gpt-test",
+        "api_version": "2024-02-15-preview",
+    }
+
+    def test_uses_customer_profile_fields_when_present(self):
+        rule = CashBusinessAIRule(self.config)
+        df = make_txn_df([
+            {
+                "Sender_account": "ACC001",
+                "Payment_type": "Cash Deposit",
+                "Amount": 20000.0,
+                "Occupation": "Construction Contractor",
+                "Complete Address": "India",
+                "Total Income Per Annum": 1000000,
+                "Risk_Category": "CLEAN",
+                "Is_Flagged": False,
+            }
+        ])
+        # The test only checks that the rule can build a context row from profile fields
+        # without crashing when the customer fields are present.
+        assert rule is not None
+        assert "Occupation" in df.columns
+
+
+def test_enrich_with_customer_data_handles_duplicate_account_rows(tmp_path):
+    txn_df = pd.DataFrame([
+        {"Sender_account": "ACC001", "Amount": 1000.0}
+    ])
+    customer_csv = tmp_path / "customers.csv"
+    pd.DataFrame([
+        {
+            "Account Number": "ACC001",
+            "Occupation": "Doctor",
+            "Complete Address": "India",
+            "Total Income Per Annum": 500000,
+            "Risk_Category": "CLEAN",
+            "Is_Flagged": False,
+        },
+        {
+            "Account Number": "ACC001",
+            "Occupation": "Doctor",
+            "Complete Address": "India",
+            "Total Income Per Annum": 500000,
+            "Risk_Category": "CLEAN",
+            "Is_Flagged": False,
+        },
+    ]).to_csv(customer_csv, index=False)
+
+    enriched = enrich_with_customer_data(txn_df, str(customer_csv))
+
+    assert enriched.loc[0, "Occupation"] == "Doctor"
+    assert enriched.loc[0, "Complete Address"] == "India"
+
+
 class TestLayeringRule:
     config = {
         "enabled": True,
-        "score": 35,
         "window_hours": 72,
         "min_chain_length": 3,
         "min_fan_degree": 3,

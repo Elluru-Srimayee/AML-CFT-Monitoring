@@ -73,13 +73,19 @@ rules:
     window_hours: 24
     passthrough_pct: 0.80             # 80%+ of received funds sent out
 
+  cash_business_ai:
+    enabled: true
+    score: 30
+    deviation_multiplier: 1.5
+    minimum_confidence: 0.80
+
 # ------------------------------------------------------------------
 # Risk Scoring — tier thresholds
 # ------------------------------------------------------------------
 risk_scoring:
   tiers:
-    LOW:      [0, 30]
-    MEDIUM:   [31, 59]
+    LOW:      [0, 29]
+    MEDIUM:   [30, 59]
     HIGH:     [60, 79]
     CRITICAL: [80, 999]
   # Only MEDIUM and above generate alerts
@@ -125,16 +131,3 @@ sar:
 logging:
   level: "INFO"                       # DEBUG | INFO | WARNING | ERROR
   log_file: "data/outputs/aml_system.log"
-
-# ------------------------------------------------------------------
-# Azure AI Agent
-# ------------------------------------------------------------------
-cash_business_ai:
-  enabled: true
-  score: 30
-  deviation_multiplier: 1.5
-  minimum_confidence: 0.80
-  azure_endpoint: "https://YOUR-ENDPOINT.openai.azure.com/"
-  azure_api_key: "YOUR_API_KEY"
-  deployment_name: "gpt-4.1"
-  api_version: "2024-02-15-preview"

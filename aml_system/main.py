@@ -28,7 +28,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from src.alert_generation.alert_manager import AlertManager
-from src.ingestion.loader import TransactionLoader
+from src.ingestion.loader import TransactionLoader, enrich_with_customer_data
 from src.investigation.case_builder import CaseBuilder
 from src.risk_scoring.scorer import RiskScorer
 from src.rules_engine.engine import RulesEngine
@@ -104,6 +104,9 @@ def main() -> None:
     loader.input_file = args.input
 
     df = loader.load_all(sample_n=args.sample)
+    customer_details_file = cfg.get("investigation", {}).get("customer_details_file", "data/raw/customer_details_with_risk.csv")
+    if os.path.exists(customer_details_file):
+        df = enrich_with_customer_data(transactions=df, customer_csv=customer_details_file)
     print_kv("Rows loaded:", f"{len(df):,}")
     print_kv("Columns:", ", ".join(df.columns.tolist()))
     print_kv("Elapsed:", f"{time.time() - t0:.1f}s")

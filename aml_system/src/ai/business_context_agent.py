@@ -1,22 +1,3 @@
-"""
-business_context_agent.py
-=========================
-
-Business Context AI Agent
-
-Responsibilities
-----------------
-1. Summarize customer transactions
-2. Check cache
-3. Build prompt
-4. Call Azure OpenAI
-5. Parse response
-6. Save cache
-7. Return business context
-
-No AML decision logic belongs here.
-"""
-
 from __future__ import annotations
 
 import pandas as pd
@@ -34,11 +15,8 @@ class BusinessContextAgent:
         azure_client: AzureAIClient,
         cache_manager: CacheManager,
     ):
-
         self.azure = azure_client
         self.cache = cache_manager
-
-    # ----------------------------------------------------------
 
     def analyze(
         self,
@@ -46,46 +24,44 @@ class BusinessContextAgent:
         transactions: pd.DataFrame,
     ) -> dict:
         """
-        Returns expected business behaviour.
+        Returns expected business behaviour for the current transaction profile.
 
-        Parameters
-        ----------
-        customer
-
-        transactions
-
-        Returns
-        -------
-        dict
+        Now includes payment type in the cache key so Cash Deposit and Cross-border
+        transactions do not reuse the same AI context incorrectly.
         """
 
         summary = self._build_transaction_summary(transactions)
 
-        occupation = customer["Occupation"]
+        occupation = customer.get("Occupation", "")
+        country = customer.get("Complete Address", "Unknown")
 
-        country = customer["Complete Address"]
+        try:
+            income = float(customer.get("Total Income Per Annum", 0) or 0)
+        except (TypeError, ValueError):
+            income = 0.0
 
-        income = float(customer["Total Income Per Annum"])
+        sender_account = str(customer.get("Sender_account", "")).strip()
+        risk_category = str(customer.get("Risk_Category", "UNKNOWN")).strip()
+        currency = str(customer.get("Payment_currency", "")).strip()
+        payment_type = str(customer.get("Payment_type", "")).strip()
 
         cache_key = self.cache.build_cache_key(
-
             occupation=occupation,
-
             country=country,
-
             income=income,
+            sender_account=sender_account,
+            risk_category=risk_category,
+            currency=currency,
+            payment_type=payment_type,
         )
 
         cached = self.cache.get(cache_key)
 
         if cached is not None:
-
             return cached
 
         prompt = PromptBuilder.build_cash_business_prompt(
-
             customer,
-
             summary,
         )
 
@@ -94,132 +70,96 @@ class BusinessContextAgent:
         context = ResponseParser.parse(response)
 
         self.cache.save(
-
             cache_key=cache_key,
-
             occupation=occupation,
-
             country=country,
-
             income_band=self.cache.income_band(income),
-
             response=context,
         )
 
         return context
 
-    # ----------------------------------------------------------
 
     @staticmethod
     def _build_transaction_summary(
         df: pd.DataFrame,
     ) -> dict:
         """
-        Aggregate transaction statistics.
+        Aggregate transaction statistics for all payment types.
 
-        This keeps prompts small and fast.
+        This no longer filters only CASH transactions.
         """
 
-        if df.empty:
+        default_summary = {
+            "total_transaction_amount": 0.0,
+            "transaction_count": 0,
+            "average_transaction_amount": 0.0,
+            "maximum_transaction_amount": 0.0,
 
-            return {
+            # Legacy keys kept so existing PromptBuilder does not break.
+            "monthly_cash_deposit": 0.0,
+            "total_cash_deposit": 0.0,
+            "cash_deposit_count": 0,
+            "average_cash_deposit": 0.0,
+            "maximum_cash_deposit": 0.0,
 
-                "monthly_cash_deposit": 0,
+            "sender_locations": "",
+            "receiver_locations": "",
+            "payment_types": "",
+            "payment_currencies": "",
+            "received_currencies": "",
+        }
 
-                "cash_deposit_count": 0,
+        if df is None or df.empty:
+            return default_summary
 
-                "average_cash_deposit": 0,
+        txn_df = df.copy()
 
-                "maximum_cash_deposit": 0,
+        if "Amount" not in txn_df.columns:
+            return default_summary
 
-                "sender_locations": "",
+        txn_df["Amount"] = pd.to_numeric(
+            txn_df["Amount"],
+            errors="coerce",
+        ).fillna(0.0)
 
-                "receiver_locations": "",
-
-                "payment_types": "",
-            }
-
-        cash_df = df.copy()
-
-        #
-        # NOTE
-        #
-        # Replace this condition according to your
-        # actual dataset if cash transactions
-        # are identified differently.
-        #
-
-        cash_df = cash_df[
-            cash_df["Payment_type"]
-            .astype(str)
-            .str.upper()
-            .str.contains("CASH", na=False)
-        ]
-
-        if cash_df.empty:
-
-            return {
-
-                "monthly_cash_deposit": 0,
-
-                "cash_deposit_count": 0,
-
-                "average_cash_deposit": 0,
-
-                "maximum_cash_deposit": 0,
-
-                "sender_locations": "",
-
-                "receiver_locations": "",
-
-                "payment_types": "",
-            }
+        transaction_count = int(len(txn_df))
+        total_amount = float(txn_df["Amount"].sum())
+        average_amount = float(txn_df["Amount"].mean()) if transaction_count > 0 else 0.0
+        maximum_amount = float(txn_df["Amount"].max()) if transaction_count > 0 else 0.0
 
         return {
+            "total_transaction_amount": total_amount,
+            "transaction_count": transaction_count,
+            "average_transaction_amount": average_amount,
+            "maximum_transaction_amount": maximum_amount,
 
-            "monthly_cash_deposit":
+            # Legacy aliases.
+            # These are no longer cash-only; they are retained only to avoid
+            # breaking the existing prompt/parser contract immediately.
+            "monthly_cash_deposit": total_amount,
+            "total_cash_deposit": total_amount,
+            "cash_deposit_count": transaction_count,
+            "average_cash_deposit": average_amount,
+            "maximum_cash_deposit": maximum_amount,
 
-                float(cash_df["Amount"].sum()),
+            "sender_locations": ", ".join(
+                sorted(txn_df["Sender_bank_location"].astype(str).unique())
+            ) if "Sender_bank_location" in txn_df.columns else "",
 
-            "cash_deposit_count":
+            "receiver_locations": ", ".join(
+                sorted(txn_df["Receiver_bank_location"].astype(str).unique())
+            ) if "Receiver_bank_location" in txn_df.columns else "",
 
-                int(len(cash_df)),
+            "payment_types": ", ".join(
+                sorted(txn_df["Payment_type"].astype(str).unique())
+            ) if "Payment_type" in txn_df.columns else "",
 
-            "average_cash_deposit":
+            "payment_currencies": ", ".join(
+                sorted(txn_df["Payment_currency"].astype(str).unique())
+            ) if "Payment_currency" in txn_df.columns else "",
 
-                float(cash_df["Amount"].mean()),
-
-            "maximum_cash_deposit":
-
-                float(cash_df["Amount"].max()),
-
-            "sender_locations":
-
-                ", ".join(
-                    sorted(
-                        cash_df["Sender_bank_location"]
-                        .astype(str)
-                        .unique()
-                    )
-                ),
-
-            "receiver_locations":
-
-                ", ".join(
-                    sorted(
-                        cash_df["Receiver_bank_location"]
-                        .astype(str)
-                        .unique()
-                    )
-                ),
-
-            "payment_types":
-
-                ", ".join(
-                    sorted(
-                        cash_df["Payment_type"]
-                        .astype(str)
-                        .unique()
-                    )
-                ),
+            "received_currencies": ", ".join(
+                sorted(txn_df["Received_currency"].astype(str).unique())
+            ) if "Received_currency" in txn_df.columns else "",
         }

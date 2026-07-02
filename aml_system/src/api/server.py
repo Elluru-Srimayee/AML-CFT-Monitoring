@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from src.ingestion.loader import TransactionLoader
+from src.ingestion.loader import TransactionLoader, enrich_with_customer_data
 from src.rules_engine.engine import RulesEngine
 from src.risk_scoring.scorer import RiskScorer
 from src.alert_generation.alert_manager import AlertManager
@@ -121,6 +121,9 @@ def run_pipeline(sample: Optional[int] = None, skip_sar: bool = False, alert_lim
     try:
         loader = TransactionLoader(config_path="config/config.yaml")
         df = loader.load_all(sample_n=sample)
+        customer_details_file = CFG.get("investigation", {}).get("customer_details_file", "data/raw/customer_details_with_risk.csv")
+        if os.path.exists(customer_details_file):
+            df = enrich_with_customer_data(transactions=df, customer_csv=customer_details_file)
 
         engine = RulesEngine(config_path="config/config.yaml")
         scored_df = engine.run(df)
@@ -150,6 +153,7 @@ def run_pipeline(sample: Optional[int] = None, skip_sar: bool = False, alert_lim
             "LargeTransaction": "Large-Cash-Transaction",
             "HighRiskCountry": "High-Risk-Jurisdiction",
             "CurrencyMismatch": "FX-Layering",
+            "CashBusinessAI": "Cash-Business-AI",
         }
 
         def derive_laundering_type(triggered_rules_str: str) -> str:

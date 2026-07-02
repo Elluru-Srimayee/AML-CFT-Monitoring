@@ -195,7 +195,6 @@ class TransactionLoader:
 
 
 def enrich_with_customer_data(
-    self,
     transactions: pd.DataFrame,
     customer_csv: str,
 ) -> pd.DataFrame:
@@ -229,18 +228,29 @@ def enrich_with_customer_data(
         .str.strip()
     )
 
+    # Deduplicate account rows while keeping the first non-empty profile values.
+    if "Account Number" in customers.columns:
+        customers = customers.drop_duplicates(subset=["Account Number"], keep="first")
+
+    # If the customer file contains duplicate account numbers, use the first row
+    # with populated values to avoid merge failures and preserve the profile.
+    if "Account Number" in customers.columns:
+        for col in [
+            "Occupation",
+            "Complete Address",
+            "Total Income Per Annum",
+            "Risk_Category",
+            "Is_Flagged",
+        ]:
+            if col in customers.columns:
+                customers[col] = customers[col].astype(str).str.strip()
+
     merged = transactions.merge(
-
         customers,
-
         left_on="Sender_account",
-
         right_on="Account Number",
-
         how="left",
-
         validate="many_to_one",
-
     )
 
     return merged
