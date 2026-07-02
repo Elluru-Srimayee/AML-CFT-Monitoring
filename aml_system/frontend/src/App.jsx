@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-do
 import Dashboard from './views/Dashboard'
 import Alerts from './views/Alerts'
 import AlertView from './views/AlertView'
+import Cases from './views/Cases'
 import SAR from './views/SAR'
 import SARDetail from './views/SARDetail'
 import CaseView from './views/CaseView'
@@ -24,6 +25,7 @@ function Navigation() {
   const links = [
     { to: '/', label: 'Dashboard', icon: BarChart3 },
     { to: '/alerts', label: 'Alerts', icon: AlertCircle },
+    { to: '/cases', label: 'Cases', icon: FileText },
     { to: '/sar', label: 'SAR Reports', icon: FileText },
   ]
 
@@ -80,9 +82,10 @@ export default function App() {
               />
               <Route path="/alerts" element={<Alerts />} />
               <Route path="/alerts/:alertId" element={<AlertView />} />
+              <Route path="/cases" element={<Cases />} />
+              <Route path="/cases/:caseId" element={<CaseView />} />
               <Route path="/sar" element={<SAR />} />
               <Route path="/sar/:caseId" element={<SARDetail />} />
-              <Route path="/cases/:caseId" element={<CaseView />} />
             </Routes>
           </div>
         </main>

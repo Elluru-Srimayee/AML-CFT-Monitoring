@@ -156,10 +156,10 @@ export default function Dashboard({ dashboardState, onDashboardStateChange }) {
     setLoading(true)
     setStatus('Running AML pipeline with a random sample file...')
     try {
-      const data = await runPipeline(undefined, 200, 200)
+      const data = await runPipeline()
       // Clear cache when new pipeline run is successful
       localStorage.removeItem(DASHBOARD_CACHE_KEY)
-      persistState(data.summary, data, 'Completed using a sample transaction file')
+      persistState(data.summary, data, 'Completed using a sample transactions')
     } catch (error) {
       persistState(summary, runResult, 'Pipeline failed. Check backend logs.')
     } finally {
@@ -235,7 +235,7 @@ export default function Dashboard({ dashboardState, onDashboardStateChange }) {
         <div className="flex flex-col sm:flex-row gap-4 items-end">
           <div className="flex-1">
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              The pipeline will automatically pick one of the bundled sample transaction files and process all of its transactions.
+              The pipeline will automatically pick the sample transaction list and process all of its transactions.
             </p>
           </div>
           <button

@@ -15,10 +15,7 @@ export default function SAR() {
   const [selectedFilter, setSelectedFilter] = useState('all')
   const [isCached, setIsCached] = useState(false)
 
-  const generatedCandidateCount = new Set([
-    ...candidates.filter(c => c.sar_file).map(c => c.case_id),
-    ...Object.keys(generated),
-  ]).size
+  const generatedCandidateCount = candidates.filter(candidate => candidate.sar_file || generated[candidate.case_id]).length
 
   const filteredCandidates = candidates.filter(candidate => {
     if (selectedFilter === 'escalated') {
@@ -29,33 +26,51 @@ export default function SAR() {
     return true // 'all' filter
   })
 
+  function buildGeneratedMap(candidateList = []) {
+    return candidateList.reduce((acc, candidate) => {
+      if (candidate?.sar_file) {
+        acc[candidate.case_id] = candidate.sar_file
+      }
+      return acc
+    }, {})
+  }
+
   async function loadCandidates(forceRefresh = false) {
     setLoading(true)
     setError('')
-    try {
-      // Try to get from cache first if not forcing refresh
-      if (!forceRefresh) {
-        const cached = localStorage.getItem(SAR_CACHE_KEY)
-        if (cached) {
-          const cachedData = JSON.parse(cached)
-          setCandidates(cachedData)
-          setIsCached(true)
-          setLoading(false)
-          return
-        }
-      }
 
-      // Fetch from API
+    const cached = localStorage.getItem(SAR_CACHE_KEY)
+    const cachedData = cached ? JSON.parse(cached) : null
+    const cachedCandidates = Array.isArray(cachedData)
+      ? cachedData
+      : (cachedData?.candidates || cachedData?.sar_candidates || [])
+
+    if (!forceRefresh && cachedCandidates.length > 0) {
+      setCandidates(cachedCandidates)
+      setGenerated(buildGeneratedMap(cachedCandidates))
+      setIsCached(true)
+      setLoading(false)
+      return
+    }
+
+    try {
       const data = await fetchSARCandidates()
       const candidatesData = data.candidates || data.sar_candidates || []
       setCandidates(candidatesData)
+      setGenerated(buildGeneratedMap(candidatesData))
       setIsCached(false)
 
-      // Save to cache
       localStorage.setItem(SAR_CACHE_KEY, JSON.stringify(candidatesData))
       localStorage.setItem(SAR_CACHE_TIMESTAMP_KEY, new Date().toISOString())
     } catch (err) {
-      setError('Failed to load SAR candidates')
+      if (cachedCandidates.length > 0) {
+        setCandidates(cachedCandidates)
+        setGenerated(buildGeneratedMap(cachedCandidates))
+        setIsCached(true)
+        setError('Showing cached SAR data because the server is unavailable')
+      } else {
+        setError('Failed to load SAR candidates')
+      }
       console.error(err)
     } finally {
       setLoading(false)
@@ -70,17 +85,22 @@ export default function SAR() {
   }
 
   useEffect(() => {
-    // Check if this is a new session (app restart)
-    const sessionMarker = sessionStorage.getItem('aml_sar_session_loaded')
-    if (!sessionMarker) {
-      // First load in this session - clear cache to ensure fresh data
-      localStorage.removeItem(SAR_CACHE_KEY)
-      sessionStorage.setItem('aml_sar_session_loaded', 'true')
-      loadCandidates(true)
-    } else {
-      // Subsequent loads - use cache if available
-      loadCandidates(false)
+    const cached = localStorage.getItem(SAR_CACHE_KEY)
+    if (cached) {
+      try {
+        const cachedData = JSON.parse(cached)
+        const cachedCandidates = Array.isArray(cachedData)
+          ? cachedData
+          : (cachedData?.candidates || cachedData?.sar_candidates || [])
+        setCandidates(cachedCandidates)
+        setGenerated(buildGeneratedMap(cachedCandidates))
+        setIsCached(true)
+      } catch (error) {
+        console.error('Failed to parse cached SAR data', error)
+      }
     }
+
+    loadCandidates(true)
   }, [])
 
   async function handleGenerateSAR(caseId) {
@@ -88,7 +108,12 @@ export default function SAR() {
     try {
       const result = await generateSAR(caseId)
       if (result.success || result.sar_file) {
-        setGenerated(prev => ({ ...prev, [caseId]: result.sar_file || result.filename }))
+        setGenerated(prev => ({
+          ...prev,
+          [caseId]: result.sar_file || result.filename,
+        }))
+        // Refresh cache after generating SAR
+        setTimeout(() => loadCandidates(true), 500)
       } else {
         setError(`Failed to generate SAR for ${caseId}`)
       }
@@ -130,11 +155,29 @@ export default function SAR() {
     <div className="space-y-6">
       {/* Header */}
       <div className="card">
-        <h2 className="text-2xl font-bold flex items-center gap-2 mb-4">
-          <FileText className="w-6 h-6 text-primary-600 dark:text-primary-400" />
-          SAR Report Generation
-        </h2>
-        <p className="text-gray-600 dark:text-gray-400">Review escalated cases and generate Suspicious Activity Reports (SAR) for regulatory filing</p>
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <h2 className="text-2xl font-bold flex items-center gap-2 mb-4">
+              <FileText className="w-6 h-6 text-primary-600 dark:text-primary-400" />
+              SAR Report Generation
+            </h2>
+            <p className="text-gray-600 dark:text-gray-400">Review escalated cases and generate Suspicious Activity Reports (SAR) for regulatory filing</p>
+          </div>
+          <button
+            onClick={() => clearCache()}
+            disabled={loading}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white font-semibold text-sm"
+            title="Refresh data from server"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
+        {isCached && !loading && (
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            ✓ Data cached from local storage (click Refresh to reload from server)
+          </div>
+        )}
       </div>
 
       {/* Error Message */}
@@ -197,7 +240,7 @@ export default function SAR() {
         >
           <p className="text-gray-600 dark:text-gray-400 text-sm">Generated Reports</p>
           <p className="text-3xl font-bold text-success-600 dark:text-success-400">
-            {generatedCandidateCount + Object.keys(generated).length}
+            {generatedCandidateCount}
           </p>
         </div>
       </div>
