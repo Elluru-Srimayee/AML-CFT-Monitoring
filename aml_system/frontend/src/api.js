@@ -17,15 +17,27 @@ const handleResponse = async (res) => {
   return content ? JSON.parse(content) : null
 }
 
-export async function fetchSummary(sample = 100, alertLimit = 100, caseLimit = 100) {
-  const params = new URLSearchParams({ sample: String(sample), alert_limit: String(alertLimit), case_limit: String(caseLimit) })
-  const res = await fetch(`${API_BASE}/api/run?${params.toString()}`)
+export async function fetchSummary(sample, alertLimit, caseLimit) {
+  const params = new URLSearchParams()
+  if (alertLimit !== undefined && alertLimit !== null) params.set('alert_limit', String(alertLimit))
+  if (caseLimit !== undefined && caseLimit !== null) params.set('case_limit', String(caseLimit))
+  if (sample !== undefined && sample !== null && sample !== '') {
+    params.set('sample', String(sample))
+  }
+  const query = params.toString()
+  const res = await fetch(`${API_BASE}/api/run${query ? `?${query}` : ''}`)
   return res.json()
 }
 
-export async function runPipeline(sample, alertLimit = 100, caseLimit = 100) {
-  const params = new URLSearchParams({ sample: String(sample), alert_limit: String(alertLimit), case_limit: String(caseLimit) })
-  const res = await fetch(`${API_BASE}/api/run?${params.toString()}`)
+export async function runPipeline(sample, alertLimit, caseLimit) {
+  const params = new URLSearchParams()
+  if (alertLimit !== undefined && alertLimit !== null) params.set('alert_limit', String(alertLimit))
+  if (caseLimit !== undefined && caseLimit !== null) params.set('case_limit', String(caseLimit))
+  if (sample !== undefined && sample !== null && sample !== '') {
+    params.set('sample', String(sample))
+  }
+  const query = params.toString()
+  const res = await fetch(`${API_BASE}/api/run${query ? `?${query}` : ''}`)
   return res.json()
 }
 
@@ -50,12 +62,24 @@ export async function fetchSARCandidates() {
   return res.json()
 }
 
+export async function fetchSARCandidatesList(offset = 0, limit = 50, riskTier = '') {
+  const params = new URLSearchParams({ offset: String(offset), limit: String(limit) })
+  if (riskTier) params.append('risk_tier', riskTier)
+  const res = await fetch(buildUrl(`/api/sar/candidates/list?${params.toString()}`))
+  return handleResponse(res)
+}
+
 export async function generateSAR(caseId) {
   const res = await fetch(`${API_BASE}/api/sar/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ case_id: caseId }),
   })
+  return res.json()
+}
+
+export async function fetchSARDetail(caseId) {
+  const res = await fetch(`${API_BASE}/api/sar/${caseId}`)
   return res.json()
 }
 
@@ -71,5 +95,13 @@ export async function fetchAlertDetail(id) {
 
 export async function fetchCaseDetail(id) {
   const res = await fetch(buildUrl(`/api/cases/${id}`))
+  return handleResponse(res)
+}
+
+export async function fetchCasesList(offset = 0, limit = 50, riskTier = '', caseStatus = '') {
+  const params = new URLSearchParams({ offset: String(offset), limit: String(limit) })
+  if (riskTier) params.append('risk_tier', riskTier)
+  if (caseStatus) params.append('status', caseStatus)
+  const res = await fetch(buildUrl(`/api/cases/list?${params.toString()}`))
   return handleResponse(res)
 }

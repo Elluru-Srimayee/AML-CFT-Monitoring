@@ -1,3 +1,4 @@
+import json
 import math
 import os
 from dataclasses import asdict
@@ -29,6 +30,74 @@ app.add_middleware(
 
 CFG = load_config("config/config.yaml")
 
+# Global cache for cases (loaded once at startup or on-demand)
+_CASES_CACHE = None
+_CASES_CACHE_TIMESTAMP = None
+
+def _load_cases_cache():
+    """Load all case JSON files into memory for fast pagination/filtering."""
+    global _CASES_CACHE, _CASES_CACHE_TIMESTAMP
+    try:
+        cases_dir = CFG.get("investigation", {}).get("cases_dir")
+        if not cases_dir or not os.path.isdir(cases_dir):
+            _CASES_CACHE = []
+            return []
+        
+        cases = []
+        for fname in sorted(os.listdir(cases_dir)):
+            if fname.endswith('.json'):
+                try:
+                    with open(Path(cases_dir) / fname, 'r', encoding='utf-8') as f:
+                        case = json.load(f)
+                        cases.append(_serialize_for_json(case))
+                except Exception as e:
+                    print(f"Warning: Failed to load case {fname}: {e}")
+        
+        _CASES_CACHE = cases
+        _CASES_CACHE_TIMESTAMP = __import__('time').time()
+        return cases
+    except Exception as e:
+        print(f"Error loading cases cache: {e}")
+        _CASES_CACHE = []
+        return []
+
+def _get_cases_cache():
+    """Get cases from cache, loading on first access."""
+    global _CASES_CACHE
+    if _CASES_CACHE is None:
+        _load_cases_cache()
+    return _CASES_CACHE or []
+
+
+# Global SAR candidates cache
+_SAR_CANDIDATES_CACHE = None
+
+def _load_sar_candidates_cache():
+    """Load ESCALATED cases and their SAR files into cache."""
+    global _SAR_CANDIDATES_CACHE
+    try:
+        all_cases = _get_cases_cache()
+        candidates = []
+        for case in all_cases:
+            if case.get('status') == 'ESCALATED' or case.get('recommendation') == 'SAR':
+                case_copy = _serialize_for_json(case)
+                sar_file = _find_sar_for_case(case_copy.get('case_id') or '')
+                if sar_file:
+                    case_copy['sar_file'] = sar_file
+                candidates.append(case_copy)
+        _SAR_CANDIDATES_CACHE = candidates
+        return candidates
+    except Exception as e:
+        print(f"Error loading SAR candidates cache: {e}")
+        _SAR_CANDIDATES_CACHE = []
+        return []
+
+def _get_sar_candidates_cache():
+    """Get SAR candidates from cache, loading on first access."""
+    global _SAR_CANDIDATES_CACHE
+    if _SAR_CANDIDATES_CACHE is None:
+        _load_sar_candidates_cache()
+    return _SAR_CANDIDATES_CACHE or []
 
 def _serialize_for_json(value: Any) -> Any:
     """Convert pandas/Dataclass values into JSON-safe structures."""
@@ -114,9 +183,10 @@ def get_transactions(sample: Optional[int] = None):
 
 
 @app.get("/api/run")
-def run_pipeline(sample: Optional[int] = None, skip_sar: bool = False, alert_limit: int = 100, case_limit: int = 100):
+def run_pipeline(sample: Optional[int] = None, skip_sar: bool = False, alert_limit: Optional[int] = None, case_limit: Optional[int] = None):
     """Run the core pipeline (ingest → rules → scoring → alerts → cases).
-    Returns a short summary and small datasets for UI consumption.
+    Returns a short summary and datasets for UI consumption.
+    If `alert_limit` or `case_limit` are omitted or None, the full lists are returned.
     """
     try:
         loader = TransactionLoader(config_path="config/config.yaml")
@@ -140,10 +210,15 @@ def run_pipeline(sample: Optional[int] = None, skip_sar: bool = False, alert_lim
         # Persist generated outputs so the UI and pipeline behave like the CLI run
         alert_path = alert_mgr.save(alerts)
         case_builder.save_cases(cases)
+        
+        # Refresh cases cache after pipeline run
+        _load_cases_cache()
 
         generated_sars = []
         if not skip_sar:
             generated_sars = _auto_generate_sar_reports(cases)
+            # Refresh SAR candidates cache after generating new SARs
+            _load_sar_candidates_cache()
 
         # Save a labeled output dataset similar to main.py
         RULE_TO_TYPE = {
@@ -191,9 +266,16 @@ def run_pipeline(sample: Optional[int] = None, skip_sar: bool = False, alert_lim
             },
         }
 
-        # Return a compact sample of alerts and cases for the UI
-        alerts_sample = [_serialize_for_json(asdict(a)) for a in alerts[:max(1, alert_limit)]]
-        cases_summary = [_serialize_for_json(asdict(c)) for c in cases[:max(1, case_limit)]]
+        # Return alerts and cases; respect explicit limits if provided
+        if alert_limit is None or alert_limit <= 0:
+            alerts_sample = [_serialize_for_json(asdict(a)) for a in alerts]
+        else:
+            alerts_sample = [_serialize_for_json(asdict(a)) for a in alerts[:alert_limit]]
+
+        if case_limit is None or case_limit <= 0:
+            cases_summary = [_serialize_for_json(asdict(c)) for c in cases]
+        else:
+            cases_summary = [_serialize_for_json(asdict(c)) for c in cases[:case_limit]]
 
         return {
             "summary": summary,
@@ -276,6 +358,34 @@ def list_cases():
     return {"cases": files}
 
 
+@app.get("/api/cases/list")
+def cases_list(offset: int = 0, limit: int = 50, risk_tier: str | None = None, status: str | None = None):
+    """Return paginated cases with filtering (fast: uses in-memory cache)."""
+    try:
+        all_cases = _get_cases_cache()
+        total = len(all_cases)
+
+        # Apply filters
+        filtered = all_cases
+        if risk_tier:
+            filtered = [c for c in filtered if c.get('risk_tier') == risk_tier]
+        if status:
+            filtered = [c for c in filtered if c.get('status') == status]
+
+        # Paginate
+        page = filtered[offset: offset + limit]
+
+        # Aggregates
+        by_tier = {}
+        for c in filtered:
+            tier = c.get('risk_tier') or 'UNKNOWN'
+            by_tier[tier] = by_tier.get(tier, 0) + 1
+
+        return {"total": len(filtered), "cases": page, "by_tier": by_tier}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/cases/{case_id}")
 def case_detail(case_id: str):
     try:
@@ -292,27 +402,34 @@ def case_detail(case_id: str):
 def sar_candidates():
     """Return cases that are candidates for SAR filing (ESCALATED status)."""
     try:
-        cases_dir = CFG.get("investigation", {}).get("cases_dir")
-        if not cases_dir or not os.path.isdir(cases_dir):
-            return {"sar_candidates": [], "candidates": []}
-
-        candidates = []
-        for filename in sorted(os.listdir(cases_dir)):
-            if filename.endswith('.json'):
-                try:
-                    cb = CaseBuilder(full_df=None, config_path="config/config.yaml")
-                    case = cb.load_case(filename.replace('.json', ''))
-                    # Only include escalated cases
-                    if case.get('status') == 'ESCALATED' or case.get('recommendation') == 'SAR':
-                        case_json = _serialize_for_json(case)
-                        sar_file = _find_sar_for_case(case_json.get('case_id') or filename.replace('.json', ''))
-                        if sar_file:
-                            case_json['sar_file'] = sar_file
-                        candidates.append(case_json)
-                except Exception:
-                    pass
-
+        candidates = _get_sar_candidates_cache()
         return {"sar_candidates": candidates, "candidates": candidates}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/sar/candidates/list")
+def sar_candidates_list(offset: int = 0, limit: int = 50, risk_tier: str | None = None):
+    """Return paginated SAR candidates with filtering (fast: uses in-memory cache)."""
+    try:
+        all_candidates = _get_sar_candidates_cache()
+        total = len(all_candidates)
+
+        # Apply filters
+        filtered = all_candidates
+        if risk_tier:
+            filtered = [c for c in filtered if c.get('risk_tier') == risk_tier]
+
+        # Paginate
+        page = filtered[offset: offset + limit]
+
+        # Aggregates
+        by_tier = {}
+        for c in filtered:
+            tier = c.get('risk_tier') or 'UNKNOWN'
+            by_tier[tier] = by_tier.get(tier, 0) + 1
+
+        return {"total": len(filtered), "candidates": page, "by_tier": by_tier}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -354,4 +471,30 @@ def generate_sar(request_data: dict):
         raise HTTPException(status_code=404, detail="Case not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"SAR generation failed: {str(e)}")
+
+
+@app.get("/api/sar/{case_id}")
+def get_sar_report(case_id: str):
+    """Fetch a generated SAR report by case_id."""
+    try:
+        sar_dir = CFG.get("sar_reporting", {}).get("output_dir", "data/outputs/sar")
+        sar_path = None
+
+        # Find the SAR JSON file for this case
+        for filename in os.listdir(sar_dir):
+            if filename.endswith('.json') and case_id in filename:
+                sar_path = Path(sar_dir) / filename
+                break
+
+        if not sar_path or not sar_path.exists():
+            raise HTTPException(status_code=404, detail=f"SAR report not found for case {case_id}")
+
+        with open(sar_path, "r", encoding="utf-8") as f:
+            sar_data = json.load(f)
+
+        return {"success": True, "sar": sar_data}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"SAR report not found for case {case_id}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 

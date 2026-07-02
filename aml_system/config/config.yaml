@@ -30,7 +30,7 @@ rules:
 
   high_risk_country:
     enabled: true
-    score: 30
+    score: 40
     high_risk_countries:             # FATF grey/blacklist + known AML hotspots
       - "Iran"
       - "North Korea"

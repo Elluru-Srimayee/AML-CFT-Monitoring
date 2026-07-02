@@ -13,6 +13,7 @@ Expected columns (IBM Kaggle AML dataset):
 from __future__ import annotations
 
 import os
+import random
 from pathlib import Path
 from typing import Iterator
 
@@ -54,7 +55,12 @@ class TransactionLoader:
     def __init__(self, config_path: str = "config/config.yaml"):
         cfg = load_config(config_path)
         self.cfg = cfg["ingestion"]
+        self.project_root = Path(__file__).resolve().parents[2]
         self.input_file = self.cfg["input_file"]
+        self.sample_files = [
+            self.project_root / "data" / "raw" / name
+            for name in ("sample1.csv", "sample2.csv", "sample3.csv")
+        ]
         self.chunk_size = self.cfg.get("chunk_size", 50_000)
         self.date_fmt = self.cfg.get("date_format", "%Y/%m/%d")
         self.time_fmt = self.cfg.get("time_format", "%H:%M:%S")
@@ -71,11 +77,14 @@ class TransactionLoader:
         Returns:
             Cleaned DataFrame with parsed datetime and normalised columns.
         """
-        path = Path(self.input_file)
+        path = self._resolve_input_path()
+        if not path.is_absolute():
+            path = self.project_root / path
+        self.input_file = str(path)
         self._assert_file(path)
 
         log.info(f"Loading transactions from: {path.resolve()}")
-        nrows = sample_n if sample_n else None
+        nrows = None if path in self.sample_files else (sample_n if sample_n else None)
 
         chunks = []
         reader = pd.read_csv(
@@ -104,6 +113,15 @@ class TransactionLoader:
             yield self._clean_chunk(chunk)
 
     # ── Private Helpers ───────────────────────────────────────────────────
+
+    def _resolve_input_path(self) -> Path:
+        """Choose a sample CSV automatically when present, else fall back to the configured file."""
+        available_samples = [p for p in self.sample_files if p.exists()]
+        if available_samples:
+            chosen = random.choice(available_samples)
+            log.info(f"Using sample transaction file: {chosen.resolve()}")
+            return chosen
+        return Path(self.input_file)
 
     def _assert_file(self, path: Path) -> None:
         if not path.exists():
