@@ -2,24 +2,12 @@
 AI Rule : Business Transaction Anomaly
 ======================================
 
-Detects individual transactions that are inconsistent with
-the customer's declared occupation/business.
+Detects individual transactions inconsistent with the customer's
+declared occupation/business.
 
-This rule now evaluates ANY payment type, not only cash deposits.
-
-Workflow
---------
-Transaction
-      ↓
-Customer Profile
-      ↓
-Business Context Agent
-      ↓
-Expected Max Amount Per Transaction
-      ↓
-Transaction-Level Deviation Calculation
-      ↓
-RuleResult
+This version:
+- evaluates all payment types
+- parallelizes AI context fetches
 """
 
 from __future__ import annotations
@@ -34,24 +22,16 @@ from src.rules_engine.base_rule import RuleResult
 from src.ai.azure_client import AzureAIClient
 from src.ai.cache_manager import CacheManager
 from src.ai.business_context_agent import BusinessContextAgent
+from src.rules_engine.parallel_mixin import ParallelExecutionMixin
 
 
-class CashBusinessAIRule(BaseRule):
-    """
-    AI rule to detect individual transactions that exceed the expected
-    amount for the customer's declared business profile and payment type.
-
-    Note:
-    The class name is kept as CashBusinessAIRule to avoid breaking existing
-    rule-engine configuration. Functionally, it now evaluates all payment types.
-    """
-
+class CashBusinessAIRule(ParallelExecutionMixin, BaseRule):
     print("Initializing CashBusinessAIRule...")
 
     name = "CashBusinessAI"
 
     description = (
-        "Individual transactions inconsistent with declared business and payment type."
+        "Individual transactions inconsistent with declared business."
     )
 
     def __init__(self, config: dict):
@@ -65,6 +45,10 @@ class CashBusinessAIRule(BaseRule):
             config.get("minimum_confidence", 0.75)
         )
 
+        self.max_parallel_workers = int(
+            config.get("max_parallel_workers", 8)
+        )
+
         self.azure = AzureAIClient(
             endpoint=config["azure_endpoint"],
             api_key=config["azure_api_key"],
@@ -76,7 +60,6 @@ class CashBusinessAIRule(BaseRule):
         )
 
         self.cache = CacheManager()
-
         self.agent = BusinessContextAgent(
             self.azure,
             self.cache,
@@ -89,13 +72,9 @@ class CashBusinessAIRule(BaseRule):
         df: pd.DataFrame,
     ) -> RuleResult:
         """
-        Apply the rule transaction by transaction.
+        Apply the rule transaction-by-transaction.
 
-        Updated behavior:
-        - Processes every payment type
-        - Does not skip Cross-border, Wire, Card, UPI, Cash, etc.
-        - Uses AI context per account + occupation + payment type
-        - Flags only the individual transaction that breaches threshold
+        AI calls are parallelized across unique profile/payment combinations.
         """
 
         if not self.enabled:
@@ -106,31 +85,27 @@ class CashBusinessAIRule(BaseRule):
 
         self._validate_required_columns(df)
 
-        triggered: List[int] = []
-        reasons: Dict[int, str] = {}
+        candidate_rows: List[Dict[str, Any]] = []
+        unique_requests: Dict[str, Dict[str, Any]] = {}
 
-        # Account-level transaction context is still useful for AI.
         account_txn_map = {
             self._account_key(account): txns
             for account, txns in df.groupby("Sender_account", dropna=False)
         }
 
-        # Runtime cache to avoid repeated AI calls for the same profile
-        # within one execution.
-        context_cache: Dict[str, Dict[str, Any]] = {}
+        # ----------------------------------------------------
+        # Build unique AI requests
+        # ----------------------------------------------------
 
         for idx, txn in df.iterrows():
-
-            account = txn.get("Sender_account")
-            account_key = self._account_key(account)
-
             customer = txn.to_dict()
             customer_profile = self._build_customer_profile(customer)
 
-            # Occupation is required for this AI rule.
-            # If missing, skip safely instead of failing.
             if not customer_profile.get("Occupation"):
                 continue
+
+            account = txn.get("Sender_account")
+            account_key = self._account_key(account)
 
             customer_payload = dict(customer)
             customer_payload.update(customer_profile)
@@ -142,15 +117,46 @@ class CashBusinessAIRule(BaseRule):
                 payment_type=txn.get("Payment_type"),
             )
 
-            context = self._get_or_create_context(
-                profile_key=profile_key,
-                customer_payload=customer_payload,
-                account_txns=account_txn_map.get(
-                    account_key,
-                    pd.DataFrame([txn]),
-                ),
-                context_cache=context_cache,
+            candidate_rows.append(
+                {
+                    "idx": idx,
+                    "txn": txn,
+                    "profile_key": profile_key,
+                }
             )
+
+            if profile_key not in unique_requests:
+                unique_requests[profile_key] = {
+                    "customer_payload": customer_payload,
+                    "account_txns": account_txn_map.get(
+                        account_key,
+                        pd.DataFrame([txn]),
+                    ),
+                }
+
+        # ----------------------------------------------------
+        # Fetch AI contexts in parallel
+        # ----------------------------------------------------
+
+        context_map = self.run_parallel_tasks(
+            task_map=unique_requests,
+            worker_fn=self._analyze_profile_request,
+            max_workers=self.max_parallel_workers,
+        )
+
+        # ----------------------------------------------------
+        # Evaluate transactions
+        # ----------------------------------------------------
+
+        triggered: List[int] = []
+        reasons: Dict[int, str] = {}
+
+        for item in candidate_rows:
+            idx = item["idx"]
+            txn = item["txn"]
+            profile_key = item["profile_key"]
+
+            context = context_map.get(profile_key, {})
 
             confidence = self._to_float(
                 context.get("confidence"),
@@ -165,13 +171,7 @@ class CashBusinessAIRule(BaseRule):
                 default=0.0,
             )
 
-            # Existing AI contract field.
-            # For now, this field is treated as the expected max amount
-            # for the current payment type.
-            expected_max = self._to_float(
-                context.get("expected_cash_per_transaction_max"),
-                default=0.0,
-            )
+            expected_max = self._get_expected_max(context)
 
             if expected_max <= 0:
                 continue
@@ -189,9 +189,20 @@ class CashBusinessAIRule(BaseRule):
                     payment_type=txn.get("Payment_type"),
                 )
 
-        return self._result(
-            triggered,
-            reasons,
+        return self._result(triggered, reasons)
+
+    # --------------------------------------------------------
+
+    def _analyze_profile_request(
+        self,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Worker function used by parallel executor.
+        """
+        return self.agent.analyze(
+            payload["customer_payload"],
+            payload["account_txns"],
         )
 
     # --------------------------------------------------------
@@ -200,9 +211,6 @@ class CashBusinessAIRule(BaseRule):
         self,
         df: pd.DataFrame,
     ) -> None:
-        """
-        Validate columns required for transaction-level processing.
-        """
         required_columns = [
             "Sender_account",
             "Payment_type",
@@ -220,16 +228,10 @@ class CashBusinessAIRule(BaseRule):
                 f"{', '.join(missing_columns)}"
             )
 
-    # --------------------------------------------------------
-
     def _build_customer_profile(
         self,
         customer: dict,
     ) -> dict:
-        """
-        Extract customer profile from the transaction row.
-        Supports enriched and raw column naming variants.
-        """
         profile = {
             "Occupation": (
                 customer.get("Occupation")
@@ -274,28 +276,6 @@ class CashBusinessAIRule(BaseRule):
 
         return profile
 
-    # --------------------------------------------------------
-
-    def _get_or_create_context(
-        self,
-        profile_key: str,
-        customer_payload: dict,
-        account_txns: pd.DataFrame,
-        context_cache: Dict[str, Dict[str, Any]],
-    ) -> Dict[str, Any]:
-        """
-        Get AI context for the exact account/profile/payment-type combination.
-        """
-        if profile_key not in context_cache:
-            context_cache[profile_key] = self.agent.analyze(
-                customer_payload,
-                account_txns,
-            )
-
-        return context_cache[profile_key]
-
-    # --------------------------------------------------------
-
     def _profile_key(
         self,
         account: Any,
@@ -304,10 +284,7 @@ class CashBusinessAIRule(BaseRule):
         payment_type: Any,
     ) -> str:
         """
-        Build runtime cache key.
-
-        Including payment_type is important because the expected amount for
-        a Cash Deposit, Cross-border payment, Wire Transfer, etc. may differ.
+        Unique runtime key for one AI business context request.
         """
         return "|".join(
             [
@@ -325,9 +302,6 @@ class CashBusinessAIRule(BaseRule):
         self,
         account: Any,
     ) -> str:
-        """
-        Convert account identifier into a stable key.
-        """
         return str(account).strip()
 
     def _to_float(
@@ -335,15 +309,30 @@ class CashBusinessAIRule(BaseRule):
         value: Any,
         default: float = 0.0,
     ) -> float:
-        """
-        Safely convert a value to float.
-        """
         try:
             if pd.isna(value):
                 return default
             return float(value)
         except (TypeError, ValueError):
             return default
+
+    def _get_expected_max(
+        self,
+        context: Dict[str, Any],
+    ) -> float:
+        """
+        Support both old and new response contracts.
+        """
+        if "expected_transaction_amount_max" in context:
+            return self._to_float(
+                context.get("expected_transaction_amount_max"),
+                default=0.0,
+            )
+
+        return self._to_float(
+            context.get("expected_cash_per_transaction_max"),
+            default=0.0,
+        )
 
     def _build_reason(
         self,
@@ -353,9 +342,6 @@ class CashBusinessAIRule(BaseRule):
         context: Dict[str, Any],
         payment_type: Any,
     ) -> str:
-        """
-        Build explanation for a flagged transaction.
-        """
         business_category = context.get(
             "business_category",
             "UNKNOWN",
