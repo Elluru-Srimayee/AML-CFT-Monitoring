@@ -59,7 +59,7 @@ class TransactionLoader:
         self.input_file = self.cfg["input_file"]
         self.sample_files = [
             self.project_root / "data" / "raw" / name
-            for name in ("sampletest.csv","sampletest.csv")
+            for name in ("sample1.csv","sample1.csv")
             # for name in ("sample1.csv", "sample2.csv", "sample3.csv")
         ]
         self.chunk_size = self.cfg.get("chunk_size", 50_000)

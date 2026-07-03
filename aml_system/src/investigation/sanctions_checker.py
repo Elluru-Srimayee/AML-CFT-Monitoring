@@ -123,7 +123,8 @@ class SanctionsChecker:
             )
             if result and result[1] >= self.threshold:
                 matched_name, score, idx = result
-                row = self._watchlist_df.iloc[idx]
+                row_index = self._watchlist_row_index[idx]
+                row = self._watchlist_df.iloc[row_index]
                 return {
                     "query": query,
                     "matched_entity": matched_name,

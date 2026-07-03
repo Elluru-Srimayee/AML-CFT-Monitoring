@@ -136,8 +136,21 @@ export default function Dashboard({ dashboardState, onDashboardStateChange }) {
   }
 
   const byTier = summary?.rule_summary || {}
-  const tiers = Object.keys(byTier).sort()
-  const counts = tiers.map(t => byTier[t])
+  const sortedRuleEntries = Object.entries(byTier)
+    .sort(([, countA], [, countB]) => countB - countA)
+
+  const tiers = sortedRuleEntries.map(([rule]) => rule)
+  const counts = sortedRuleEntries.map(([, count]) => count)
+
+  const ruleColorMap = {
+    HighRiskCountry: '#ef4444',
+    LargeTransaction: '#f59e0b',
+    Smurfing: '#3b82f6',
+    Layering: '#22c55e',
+    RapidMovement: '#8b5cf6',
+  }
+
+  const backgroundColors = tiers.map((rule) => ruleColorMap[rule] || '#60a5fa')
 
   const barData = {
     labels: tiers,
@@ -145,7 +158,7 @@ export default function Dashboard({ dashboardState, onDashboardStateChange }) {
       {
         label: 'Transactions Flagged',
         data: counts,
-        backgroundColor: ['#ef4444', '#f59e0b', '#3b82f6', '#22c55e'],
+        backgroundColor: backgroundColors,
         borderRadius: 8,
         borderSkipped: false,
       },

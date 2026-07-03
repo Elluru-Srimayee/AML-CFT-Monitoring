@@ -11,6 +11,8 @@ export default function Cases() {
   const [total, setTotal] = useState(0)
   const [riskTierFilter, setRiskTierFilter] = useState('')
   const [stats, setStats] = useState({})
+  const [fullStats, setFullStats] = useState({})
+  const [fullTotal, setFullTotal] = useState(0)
 
   async function loadCases() {
     setLoading(true)
@@ -26,8 +28,19 @@ export default function Cases() {
     }
   }
 
+  async function loadGlobalStats() {
+    try {
+      const data = await fetchCasesList(0, 1, '')
+      setFullTotal(data.total || 0)
+      setFullStats(data.by_tier || {})
+    } catch (err) {
+      console.warn('Failed to load global case stats:', err)
+    }
+  }
+
   useEffect(() => {
     loadCases()
+    loadGlobalStats()
   }, [offset, limit, riskTierFilter])
 
   const navigate = useNavigate()
@@ -45,6 +58,32 @@ export default function Cases() {
     }
   }
 
+  const getRiskTextColor = (tier) => {
+    switch (tier) {
+      case 'CRITICAL':
+        return 'text-danger-600 dark:text-danger-400'
+      case 'HIGH':
+        return 'text-warning-600 dark:text-warning-400'
+      case 'MEDIUM':
+        return 'text-blue-600 dark:text-blue-400'
+      default:
+        return 'text-success-600 dark:text-success-400'
+    }
+  }
+
+  const getRiskBorderColor = (tier) => {
+    switch (tier) {
+      case 'CRITICAL':
+        return 'border-danger-600 bg-danger-50 dark:bg-danger-900 dark:border-danger-400'
+      case 'HIGH':
+        return 'border-warning-600 bg-warning-50 dark:bg-warning-900 dark:border-warning-400'
+      case 'MEDIUM':
+        return 'border-blue-600 bg-blue-50 dark:bg-blue-900 dark:border-blue-400'
+      default:
+        return 'border-success-600 bg-success-50 dark:bg-success-900 dark:border-success-400'
+    }
+  }
+
   const startItem = total === 0 ? 0 : offset + 1
   const endItem = Math.min(offset + limit, total)
 
@@ -59,16 +98,36 @@ export default function Cases() {
         <p className="text-gray-600 dark:text-gray-400">Review and manage investigation cases</p>
       </div>
 
-      {/* Stats */}
+      {/* Stats - clickable filters (click a tile to apply risk tier filter) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="card">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => { setRiskTierFilter(''); setOffset(0) }}
+          className={`card cursor-pointer transition-all ${
+            riskTierFilter === ''
+              ? 'border-2 border-primary-600 shadow-lg bg-primary-50 dark:bg-primary-900 dark:border-primary-400'
+              : 'hover:shadow-md'
+          }`}
+        >
           <p className="text-gray-600 dark:text-gray-400 text-sm">Total Cases</p>
-          <p className="text-2xl font-bold text-primary-600 dark:text-primary-400">{total}</p>
+          <p className="text-2xl font-bold text-primary-600 dark:text-primary-400">{fullTotal || total}</p>
         </div>
-        {Object.entries(stats).map(([tier, count]) => (
-          <div key={tier} className="card">
+
+        {Object.entries(fullStats && Object.keys(fullStats).length ? fullStats : stats).map(([tier, count]) => (
+          <div
+            key={tier}
+            role="button"
+            tabIndex={0}
+            onClick={() => { setRiskTierFilter(tier); setOffset(0) }}
+            className={`card cursor-pointer transition-all ${
+              riskTierFilter === tier
+                ? `border-2 shadow-lg ${getRiskBorderColor(tier)}`
+                : 'hover:shadow-md'
+            }`}
+          >
             <p className="text-gray-600 dark:text-gray-400 text-sm">{tier}</p>
-            <p className="text-2xl font-bold">{count}</p>
+            <p className={`text-2xl font-bold ${getRiskTextColor(tier)}`}>{count}</p>
           </div>
         ))}
       </div>

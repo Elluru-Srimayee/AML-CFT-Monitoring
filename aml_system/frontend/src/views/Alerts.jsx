@@ -11,6 +11,8 @@ export default function Alerts() {
   const [total, setTotal] = useState(0)
   const [riskTierFilter, setRiskTierFilter] = useState('')
   const [stats, setStats] = useState({})
+  const [fullStats, setFullStats] = useState({})
+  const [fullTotal, setFullTotal] = useState(0)
 
   async function loadAlerts() {
     setLoading(true)
@@ -28,8 +30,19 @@ export default function Alerts() {
     }
   }
 
+  async function loadGlobalStats() {
+    try {
+      const data = await fetchAlerts(0, 1, '')
+      setFullTotal(data.total || 0)
+      setFullStats(data.by_tier || {})
+    } catch (err) {
+      console.warn('Failed to load global alert stats:', err)
+    }
+  }
+
   useEffect(() => {
     loadAlerts()
+    loadGlobalStats()
   }, [offset, limit, riskTierFilter])
 
   const getRiskBadgeColor = (tier) => {
@@ -75,14 +88,34 @@ export default function Alerts() {
         <p className="text-gray-600 dark:text-gray-400">Review and manage all generated AML alerts</p>
       </div>
 
-      {/* Stats */}
+      {/* Stats - clickable filters (click a tile to apply risk tier filter) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="card">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => { setRiskTierFilter(''); setOffset(0) }}
+          className={`card cursor-pointer transition-all ${
+            riskTierFilter === ''
+              ? 'border-2 border-primary-600 shadow-lg bg-primary-50 dark:bg-primary-900 dark:border-primary-400'
+              : 'hover:shadow-md'
+          }`}
+        >
           <p className="text-gray-600 dark:text-gray-400 text-sm">Total Alerts</p>
-          <p className="text-2xl font-bold text-primary-600 dark:text-primary-400">{total}</p>
+          <p className="text-2xl font-bold text-primary-600 dark:text-primary-400">{fullTotal || total}</p>
         </div>
-        {Object.entries(stats).map(([tier, count]) => (
-          <div key={tier} className="card">
+
+        {Object.entries(fullStats && Object.keys(fullStats).length ? fullStats : stats).map(([tier, count]) => (
+          <div
+            key={tier}
+            role="button"
+            tabIndex={0}
+            onClick={() => { setRiskTierFilter(tier); setOffset(0) }}
+            className={`card cursor-pointer transition-all ${
+              riskTierFilter === tier
+                ? 'border-2 border-primary-600 shadow-lg bg-primary-50 dark:bg-primary-900 dark:border-primary-400'
+                : 'hover:shadow-md'
+            }`}
+          >
             <p className="text-gray-600 dark:text-gray-400 text-sm">{tier}</p>
             <p className={`text-2xl font-bold ${getRiskTextColor(tier)}`}>{count}</p>
           </div>

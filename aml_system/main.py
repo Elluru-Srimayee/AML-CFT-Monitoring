@@ -104,7 +104,7 @@ def main() -> None:
     loader.input_file = args.input
 
     df = loader.load_all(sample_n=args.sample)
-    customer_details_file = cfg.get("investigation", {}).get("customer_details_file", "data/raw/customer_details_with_risk.csv")
+    customer_details_file = cfg.get("investigation", {}).get("customer_details_file", "data/raw/customer_details.csv")
     if os.path.exists(customer_details_file):
         df = enrich_with_customer_data(transactions=df, customer_csv=customer_details_file)
     print_kv("Rows loaded:", f"{len(df):,}")

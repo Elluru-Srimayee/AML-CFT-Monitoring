@@ -60,7 +60,7 @@ class CustomerProfiler:
     def _load_customer_details(self, config_path: str) -> None:
         cfg = load_config(config_path)
         inv_cfg = cfg.get("investigation", {})
-        path = Path(inv_cfg.get("customer_details_file", "data/raw/customer_details_with_risk.csv"))
+        path = Path(inv_cfg.get("customer_details_file", "data/raw/customer_details.csv"))
         if not path.exists():
             log.warning(
                 f"Customer details file not found: {path}. "

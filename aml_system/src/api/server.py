@@ -191,7 +191,7 @@ def run_pipeline(sample: Optional[int] = None, skip_sar: bool = False, alert_lim
     try:
         loader = TransactionLoader(config_path="config/config.yaml")
         df = loader.load_all(sample_n=sample)
-        customer_details_file = CFG.get("investigation", {}).get("customer_details_file", "data/raw/customer_details_with_risk.csv")
+        customer_details_file = CFG.get("investigation", {}).get("customer_details_file", "data/raw/customer_details.csv")
         if os.path.exists(customer_details_file):
             df = enrich_with_customer_data(transactions=df, customer_csv=customer_details_file)
 
@@ -389,8 +389,18 @@ def cases_list(offset: int = 0, limit: int = 50, risk_tier: str | None = None, s
 @app.get("/api/cases/{case_id}")
 def case_detail(case_id: str):
     try:
-        cb = CaseBuilder(full_df=None, config_path="config/config.yaml")
-        case = cb.load_case(case_id)
+        # Loading the full CaseBuilder here triggers expensive initialization
+        # (customer profiler, sanctions watchlist loading, pattern analyzer) even
+        # when we only need to return the persisted JSON for a single case.
+        # Read the case file directly for fast responses.
+        cases_dir = CFG.get("investigation", {}).get("cases_dir")
+        if not cases_dir:
+            raise FileNotFoundError(f"Case not found: {case_id}")
+        path = Path(cases_dir) / f"{case_id}.json"
+        if not path.exists():
+            raise FileNotFoundError(f"Case not found: {case_id}")
+        with open(path, "r", encoding="utf-8") as f:
+            case = json.load(f)
         return JSONResponse(content=_serialize_for_json(case))
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Case not found")

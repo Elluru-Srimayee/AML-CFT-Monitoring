@@ -20,6 +20,18 @@ function readStoredDashboardState() {
   }
 }
 
+function saveDashboardState(state) {
+  try {
+    const smallState = {
+      summary: state?.summary || null,
+      status: state?.status || 'Ready',
+    }
+    window.localStorage.setItem(DASHBOARD_STATE_KEY, JSON.stringify(smallState))
+  } catch (error) {
+    console.warn('Unable to persist dashboard state to localStorage:', error)
+  }
+}
+
 function Navigation() {
   const location = useLocation()
   const links = [
@@ -61,8 +73,8 @@ export default function App() {
   const [dashboardState, setDashboardState] = useState(readStoredDashboardState)
 
   useEffect(() => {
-    window.localStorage.setItem(DASHBOARD_STATE_KEY, JSON.stringify(dashboardState))
-  }, [dashboardState])
+    saveDashboardState(dashboardState)
+  }, [dashboardState?.summary, dashboardState?.status])
 
   return (
     <BrowserRouter>

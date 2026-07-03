@@ -13,6 +13,9 @@ This version:
 from __future__ import annotations
 
 from typing import Any, Dict, List
+from pathlib import Path
+
+from src.utils.helpers import load_config
 
 import pandas as pd
 
@@ -65,6 +68,32 @@ class CashBusinessAIRule(ParallelExecutionMixin, BaseRule):
             self.cache,
         )
 
+        # Load customer master for sender/receiver lookups (optional)
+        try:
+            cfg = load_config()
+            project_root = Path(__file__).resolve().parents[2]
+            cust_path = cfg.get("investigation", {}).get("customer_details_file")
+            if cust_path:
+                cust_file = project_root / cust_path
+                if cust_file.exists():
+                    cust_df = pd.read_csv(cust_file)
+                    cust_df.columns = cust_df.columns.str.strip()
+                    # build quick lookup map by Account Number (stringified)
+                    self._customer_map: Dict[str, Dict[str, Any]] = {
+                        str(row.get("Account Number")).strip(): {
+                            k: (v if pd.notna(v) else None)
+                            for k, v in row.items()
+                        }
+                        for _, row in cust_df.fillna("").iterrows()
+                    }
+                else:
+                    self._customer_map = {}
+            else:
+                self._customer_map = {}
+        except Exception:
+            # Non-fatal: agent will still operate using transaction-level profile
+            self._customer_map = {}
+
     # --------------------------------------------------------
 
     def apply(
@@ -101,6 +130,29 @@ class CashBusinessAIRule(ParallelExecutionMixin, BaseRule):
             customer = txn.to_dict()
             customer_profile = self._build_customer_profile(customer)
 
+            # Enrich from master customer file when available
+            sender_master = None
+            receiver_master = None
+            try:
+                if getattr(self, "_customer_map", None):
+                    sender_master = self._customer_map.get(str(txn.get("Sender_account") or "").strip())
+                    receiver_master = self._customer_map.get(str(txn.get("Receiver_account") or "").strip())
+            except Exception:
+                sender_master = None
+                receiver_master = None
+
+            # prefer master values for sender profile
+            if sender_master:
+                for k in [
+                    "Occupation",
+                    "Complete Address",
+                    "Total Income Per Annum",
+                    "Risk_Category",
+                    "Is_Flagged",
+                ]:
+                    if sender_master.get(k):
+                        customer_profile[k] = sender_master.get(k)
+
             if not customer_profile.get("Occupation"):
                 continue
 
@@ -110,8 +162,15 @@ class CashBusinessAIRule(ParallelExecutionMixin, BaseRule):
             customer_payload = dict(customer)
             customer_payload.update(customer_profile)
 
+            # attach receiver/master as Counterparty_* keys so agent can see counterparty info
+            if receiver_master:
+                for rk, rv in receiver_master.items():
+                    if rk and isinstance(rk, str):
+                        customer_payload[f"Counterparty_{rk}"] = rv
+
             profile_key = self._profile_key(
                 account=account,
+                counterparty_account=txn.get("Receiver_account"),
                 customer_profile=customer_profile,
                 payment_currency=txn.get("Payment_currency"),
                 payment_type=txn.get("Payment_type"),
@@ -279,6 +338,7 @@ class CashBusinessAIRule(ParallelExecutionMixin, BaseRule):
     def _profile_key(
         self,
         account: Any,
+        counterparty_account: Any,
         customer_profile: dict,
         payment_currency: Any,
         payment_type: Any,
@@ -289,6 +349,7 @@ class CashBusinessAIRule(ParallelExecutionMixin, BaseRule):
         return "|".join(
             [
                 str(account).strip().lower(),
+                str(counterparty_account or "").strip().lower(),
                 str(customer_profile.get("Occupation", "")).strip().lower(),
                 str(customer_profile.get("Complete Address", "")).strip().lower(),
                 str(customer_profile.get("Total Income Per Annum", "")).strip().lower(),

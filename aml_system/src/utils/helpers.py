@@ -11,17 +11,21 @@ import yaml
 # ── Config Loading ───────────────────────────────────────────────────────────
 
 _CONFIG_CACHE: dict | None = None
+_CONFIG_CACHE_PATH: Path | None = None
 
 
 def load_config(config_path: str = "config/config.yaml") -> dict:
     """Load and cache the YAML configuration file."""
     global _CONFIG_CACHE
-    if _CONFIG_CACHE is None:
-        path = Path(config_path)
+    global _CONFIG_CACHE_PATH
+    path = Path(config_path).resolve()
+    # Reload if no cache or a different path was requested
+    if _CONFIG_CACHE is None or _CONFIG_CACHE_PATH != path:
         if not path.exists():
-            raise FileNotFoundError(f"Config file not found: {path.resolve()}")
+            raise FileNotFoundError(f"Config file not found: {path}")
         with open(path, "r", encoding="utf-8") as f:
             _CONFIG_CACHE = yaml.safe_load(f)
+        _CONFIG_CACHE_PATH = path
     return _CONFIG_CACHE
 
 

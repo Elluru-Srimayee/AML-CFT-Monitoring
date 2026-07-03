@@ -120,7 +120,7 @@ graph TD
 ### 1️⃣ DATA INGESTION & ENRICHMENT
 ```
 Raw Data Sources:
-├── Customer Data (customer_details_with_risk.csv)
+├── Customer Data (customer_details.csv)
 │   ├── Customer ID
 │   ├── Name
 │   ├── Account Details
