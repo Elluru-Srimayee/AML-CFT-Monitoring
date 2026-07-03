@@ -1,0 +1,93 @@
+<mxfile host="app.diagrams.net" modified="2026-07-02T00:00:00.000Z" agent="5.0" version="24.7.17">
+  <diagram name="Page-1" id="aml-workflow">
+    <mxGraphModel dx="1422" dy="794" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1400" background="#f8fbff" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="AML / CFT End-to-End Workflow" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=30;fontStyle=1;fontColor=#0f172a;" vertex="1" parent="1">
+          <mxGeometry x="650" y="20" width="900" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle" value="High-level flow from data intake to alerts, cases, narrative, and SAR generation" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=16;fontColor=#475569;" vertex="1" parent="1">
+          <mxGeometry x="650" y="60" width="900" height="30" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#dbeafe;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="60" y="110" width="2080" height="1160" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="step1" value="1. Data Intake&#xa;Customer data&#xa;Transactions&#xa;Sanctions / watchlists" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;strokeWidth=2;fontSize=18;fontStyle=1;fontColor=#1d4ed8;" vertex="1" parent="1">
+          <mxGeometry x="120" y="170" width="240" height="120" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="step2" value="2. Validation &amp; Enrichment&#xa;Clean, normalize, validate&#xa;Link customer + transactions" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;strokeWidth=2;fontSize=18;fontStyle=1;fontColor=#15803d;" vertex="1" parent="1">
+          <mxGeometry x="430" y="170" width="240" height="120" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="step3" value="3. Sanctions &amp; Rule Checks&#xa;Sanctions checker&#xa;Rule engine: layering, rapid movement, smurfing, large txn, high-risk country" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;strokeWidth=2;fontSize=18;fontStyle=1;fontColor=#b45309;" vertex="1" parent="1">
+          <mxGeometry x="740" y="170" width="340" height="120" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="step4" value="4. Risk Scoring&#xa;Score is aggregated from all triggers&#xa;+ sanctions + customer profile context" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;strokeWidth=2;fontSize=18;fontStyle=1;fontColor=#6d28d9;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="170" width="280" height="120" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="step5" value="5. Risk Tiering&#xa;LOW / MEDIUM / HIGH / CRITICAL&#xa;Thresholds drive next action" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;strokeWidth=2;fontSize=18;fontStyle=1;fontColor=#b91c1c;" vertex="1" parent="1">
+          <mxGeometry x="1480" y="170" width="260" height="120" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="arrow1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#64748b;endArrow=classic;" edge="1" parent="1" source="step1" target="step2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arrow2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#64748b;endArrow=classic;" edge="1" parent="1" source="step2" target="step3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arrow3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#64748b;endArrow=classic;" edge="1" parent="1" source="step3" target="step4">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arrow4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#64748b;endArrow=classic;" edge="1" parent="1" source="step4" target="step5">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="alert" value="Alert Generation&#xa;Created when score is&#xa;MEDIUM or above&#xa;Stored as alert records" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef2f2;strokeColor=#ef4444;strokeWidth=2;fontSize=18;fontStyle=1;fontColor=#dc2626;" vertex="1" parent="1">
+          <mxGeometry x="260" y="380" width="260" height="140" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="case" value="Case Creation&#xa;Related alerts grouped&#xa;Case opened for review&#xa;Investigation workflow starts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#22c55e;strokeWidth=2;fontSize=18;fontStyle=1;fontColor=#16a34a;" vertex="1" parent="1">
+          <mxGeometry x="610" y="380" width="260" height="140" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="narrative" value="Investigation &amp; Narrative&#xa;Customer profiling&#xa;Pattern analysis&#xa;Narrative is generated" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f3ff;strokeColor=#8b5cf6;strokeWidth=2;fontSize=18;fontStyle=1;fontColor=#7c3aed;" vertex="1" parent="1">
+          <mxGeometry x="960" y="380" width="260" height="140" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="sar" value="SAR Escalation&#xa;Only high-risk / critical cases&#xa;Multiple rules or sanctions hit&#xa;SAR report is produced" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fefce8;strokeColor=#ca8a04;strokeWidth=2;fontSize=18;fontStyle=1;fontColor=#a16207;" vertex="1" parent="1">
+          <mxGeometry x="1310" y="380" width="260" height="140" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="output" value="Outputs &amp; Dashboards&#xa;Alerts dashboard&#xa;Cases view&#xa;SAR repository" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#3b82f6;strokeWidth=2;fontSize=18;fontStyle=1;fontColor=#2563eb;" vertex="1" parent="1">
+          <mxGeometry x="1660" y="380" width="260" height="140" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="branch1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#64748b;endArrow=classic;" edge="1" parent="1" source="step5" target="alert">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="branch2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#64748b;endArrow=classic;" edge="1" parent="1" source="step5" target="case">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="branch3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#64748b;endArrow=classic;" edge="1" parent="1" source="step5" target="narrative">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="branch4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#64748b;endArrow=classic;" edge="1" parent="1" source="step5" target="sar">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="branch5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#64748b;endArrow=classic;" edge="1" parent="1" source="step5" target="output">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="summary" value="How the system behaves&#xa;• Risk score is built from multiple rule hits and weighted by suspicious activity&#xa;• Alerts are created when score reaches medium or higher&#xa;• Cases are created to group related alerts and investigate them as one case&#xa;• Narrative is produced from customer profile, transaction pattern analysis, and investigation findings&#xa;• SAR is escalated only for truly suspicious, critical cases with supporting evidence&#xa;• All outputs are shown in the dashboard for analysts to review and act on" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;strokeWidth=2;fontSize=17;fontColor=#334155;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="220" y="620" width="1760" height="220" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2200" height="1400" viewBox="0 0 2200 1400">
+  <rect width="2200" height="1400" fill="#f8fbff"/>
+  <text x="1100" y="70" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="700" fill="#0f172a">AML / CFT End-to-End Workflow</text>
+  <text x="1100" y="108" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="18" fill="#475569">High-level flow from data intake to alerts, cases, narrative, and SAR generation</text>
+
+  <rect x="80" y="140" width="2040" height="1120" rx="24" fill="#ffffff" stroke="#dbeafe" stroke-width="2"/>
+
+  <!-- Step 1 -->
+  <rect x="140" y="200" width="260" height="120" rx="16" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+  <text x="270" y="240" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="700" fill="#1d4ed8">1. Data Intake</text>
+  <text x="270" y="272" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#334155">Customer data</text>
+  <text x="270" y="295" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#334155">Transactions</text>
+  <text x="270" y="318" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#334155">Sanctions / watchlists</text>
+
+  <!-- Step 2 -->
+  <rect x="470" y="200" width="260" height="120" rx="16" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
+  <text x="600" y="240" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="700" fill="#15803d">2. Validation &amp; Enrichment</text>
+  <text x="600" y="272" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#334155">Clean, normalize, validate</text>
+  <text x="600" y="295" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#334155">Link customer + transactions</text>
+
+  <!-- Step 3 -->
+  <rect x="800" y="200" width="320" height="120" rx="16" fill="#fef3c7" stroke="#d97706" stroke-width="2"/>
+  <text x="960" y="240" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="700" fill="#b45309">3. Sanctions &amp; Rule Checks</text>
+  <text x="960" y="272" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#334155">Sanctions checker</text>
+  <text x="960" y="295" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#334155">Rule engine: layering, rapid movement, smurfing, large txn, high-risk country</text>
+
+  <!-- Step 4 -->
+  <rect x="1160" y="200" width="300" height="120" rx="16" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/>
+  <text x="1310" y="240" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="700" fill="#6d28d9">4. Risk Scoring</text>
+  <text x="1310" y="272" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#334155">Score is aggregated from all triggers</text>
+  <text x="1310" y="295" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#334155">+ sanctions + customer profile context</text>
+
+  <!-- Step 5 -->
+  <rect x="1500" y="200" width="260" height="120" rx="16" fill="#fee2e2" stroke="#dc2626" stroke-width="2"/>
+  <text x="1630" y="240" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="700" fill="#b91c1c">5. Risk Tiering</text>
+  <text x="1630" y="272" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#334155">LOW / MEDIUM / HIGH / CRITICAL</text>
+  <text x="1630" y="295" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#334155">Thresholds drive next action</text>
+
+  <!-- Arrows -->
+  <line x1="400" y1="260" x2="470" y2="260" stroke="#64748b" stroke-width="3" marker-end="url(#arrow)"/>
+  <line x1="730" y1="260" x2="800" y2="260" stroke="#64748b" stroke-width="3" marker-end="url(#arrow)"/>
+  <line x1="1120" y1="260" x2="1160" y2="260" stroke="#64748b" stroke-width="3" marker-end="url(#arrow)"/>
+  <line x1="1460" y1="260" x2="1500" y2="260" stroke="#64748b" stroke-width="3" marker-end="url(#arrow)"/>
+
+  <!-- Alerts branch -->
+  <rect x="300" y="430" width="260" height="140" rx="16" fill="#fef2f2" stroke="#ef4444" stroke-width="2"/>
+  <text x="430" y="470" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="700" fill="#dc2626">Alert Generation</text>
+  <text x="430" y="500" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#334155">Created when score is</text>
+  <text x="430" y="523" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#334155">MEDIUM or above</text>
+  <text x="430" y="546" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#334155">Stored as alert records</text>
+
+  <!-- Cases branch -->
+  <rect x="650" y="430" width="260" height="140" rx="16" fill="#f0fdf4" stroke="#22c55e" stroke-width="2"/>
+  <text x="780" y="470" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="700" fill="#16a34a">Case Creation</text>
+  <text x="780" y="500" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#334155">Related alerts grouped</text>
+  <text x="780" y="523" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#334155">Case opened for review</text>
+  <text x="780" y="546" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#334155">Investigation workflow starts</text>
+
+  <!-- Narrative -->
+  <rect x="1000" y="430" width="260" height="140" rx="16" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="2"/>
+  <text x="1130" y="470" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="700" fill="#7c3aed">Investigation &amp; Narrative</text>
+  <text x="1130" y="500" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#334155">Customer profiling</text>
+  <text x="1130" y="523" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#334155">Pattern analysis</text>
+  <text x="1130" y="546" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#334155">Narrative is generated</text>
+
+  <!-- SAR -->
+  <rect x="1350" y="430" width="260" height="140" rx="16" fill="#fefce8" stroke="#ca8a04" stroke-width="2"/>
+  <text x="1480" y="470" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="700" fill="#a16207">SAR Escalation</text>
+  <text x="1480" y="500" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#334155">Only high-risk / critical cases</text>
+  <text x="1480" y="523" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#334155">Multiple rules or sanctions hit</text>
+  <text x="1480" y="546" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#334155">SAR report is produced</text>
+
+  <!-- Outputs -->
+  <rect x="1700" y="430" width="260" height="140" rx="16" fill="#eff6ff" stroke="#3b82f6" stroke-width="2"/>
+  <text x="1830" y="470" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="700" fill="#2563eb">Outputs &amp; Dashboards</text>
+  <text x="1830" y="500" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#334155">Alerts dashboard</text>
+  <text x="1830" y="523" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#334155">Cases view</text>
+  <text x="1830" y="546" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#334155">SAR repository</text>
+
+  <line x1="1630" y1="320" x2="1630" y2="390" stroke="#64748b" stroke-width="3" marker-end="url(#arrow)"/>
+  <line x1="1630" y1="390" x2="430" y2="430" stroke="#64748b" stroke-width="3" marker-end="url(#arrow)"/>
+  <line x1="1630" y1="390" x2="780" y2="430" stroke="#64748b" stroke-width="3" marker-end="url(#arrow)"/>
+  <line x1="1630" y1="390" x2="1130" y2="430" stroke="#64748b" stroke-width="3" marker-end="url(#arrow)"/>
+  <line x1="1630" y1="390" x2="1480" y2="430" stroke="#64748b" stroke-width="3" marker-end="url(#arrow)"/>
+  <line x1="1630" y1="390" x2="1830" y2="430" stroke="#64748b" stroke-width="3" marker-end="url(#arrow)"/>
+
+  <!-- Bottom summary -->
+  <rect x="220" y="660" width="1760" height="460" rx="20" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="1100" y="710" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#0f172a">How the system behaves</text>
+
+  <text x="280" y="760" font-family="Segoe UI, Arial, sans-serif" font-size="18" fill="#334155">• Risk score is built from multiple rule hits and weighted by suspicious activity</text>
+  <text x="280" y="795" font-family="Segoe UI, Arial, sans-serif" font-size="18" fill="#334155">• Alerts are created when score reaches medium or higher</text>
+  <text x="280" y="830" font-family="Segoe UI, Arial, sans-serif" font-size="18" fill="#334155">• Cases are created to group related alerts and investigate them as one case</text>
+  <text x="280" y="865" font-family="Segoe UI, Arial, sans-serif" font-size="18" fill="#334155">• Narrative is produced from customer profile, transaction pattern analysis, and investigation findings</text>
+  <text x="280" y="900" font-family="Segoe UI, Arial, sans-serif" font-size="18" fill="#334155">• SAR is escalated only for truly suspicious, critical cases with supporting evidence</text>
+  <text x="280" y="935" font-family="Segoe UI, Arial, sans-serif" font-size="18" fill="#334155">• All outputs are shown in the dashboard for analysts to review and act on</text>
+
+  <text x="280" y="1000" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#64748b">Flow purpose: detect suspicious activity early, investigate it properly, and escalate the most serious cases to SAR.</text>
+
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#64748b"/>
+    </marker>
+  </defs>
+</svg>
