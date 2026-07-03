@@ -30,7 +30,7 @@ rules:
 
   high_risk_country:
     enabled: true
-    score: 40
+    score: 30
     high_risk_countries:             # FATF grey/blacklist + known AML hotspots
       - "Iran"
       - "North Korea"
@@ -73,13 +73,19 @@ rules:
     window_hours: 24
     passthrough_pct: 0.80             # 80%+ of received funds sent out
 
+  cash_business_ai:
+    enabled: true
+    score: 30
+    deviation_multiplier: 1.5
+    minimum_confidence: 0.80
+
 # ------------------------------------------------------------------
 # Risk Scoring — tier thresholds
 # ------------------------------------------------------------------
 risk_scoring:
   tiers:
-    LOW:      [0, 30]
-    MEDIUM:   [31, 59]
+    LOW:      [0, 29]
+    MEDIUM:   [30, 59]
     HIGH:     [60, 79]
     CRITICAL: [80, 999]
   # Only MEDIUM and above generate alerts

@@ -59,7 +59,8 @@ class TransactionLoader:
         self.input_file = self.cfg["input_file"]
         self.sample_files = [
             self.project_root / "data" / "raw" / name
-            for name in ("sample1.csv", "sample2.csv", "sample3.csv")
+            for name in ("sampletest.csv","sampletest.csv")
+            # for name in ("sample1.csv", "sample2.csv", "sample3.csv")
         ]
         self.chunk_size = self.cfg.get("chunk_size", 50_000)
         self.date_fmt = self.cfg.get("date_format", "%Y/%m/%d")
@@ -210,3 +211,65 @@ class TransactionLoader:
             f"Laundering (ground truth): {laundering_count:,} ({100*laundering_count/len(df):.2f}%) | "
             f"Date range: {df['Timestamp'].min()} → {df['Timestamp'].max()}"
         )
+
+
+def enrich_with_customer_data(
+    transactions: pd.DataFrame,
+    customer_csv: str,
+) -> pd.DataFrame:
+    """
+    Merge customer master with transaction dataset.
+
+    Sender_account
+            ↓
+    Account Number
+
+    Returns
+    -------
+    Enriched transaction dataframe.
+    """
+
+    customers = pd.read_csv(customer_csv)
+
+    customers.columns = customers.columns.str.strip()
+
+    transactions = transactions.copy()
+
+    transactions["Sender_account"] = (
+        transactions["Sender_account"]
+        .astype(str)
+        .str.strip()
+    )
+
+    customers["Account Number"] = (
+        customers["Account Number"]
+        .astype(str)
+        .str.strip()
+    )
+
+    # Deduplicate account rows while keeping the first non-empty profile values.
+    if "Account Number" in customers.columns:
+        customers = customers.drop_duplicates(subset=["Account Number"], keep="first")
+
+    # If the customer file contains duplicate account numbers, use the first row
+    # with populated values to avoid merge failures and preserve the profile.
+    if "Account Number" in customers.columns:
+        for col in [
+            "Occupation",
+            "Complete Address",
+            "Total Income Per Annum",
+            "Risk_Category",
+            "Is_Flagged",
+        ]:
+            if col in customers.columns:
+                customers[col] = customers[col].astype(str).str.strip()
+
+    merged = transactions.merge(
+        customers,
+        left_on="Sender_account",
+        right_on="Account Number",
+        how="left",
+        validate="many_to_one",
+    )
+
+    return merged
