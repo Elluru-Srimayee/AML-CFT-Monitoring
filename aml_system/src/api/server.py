@@ -4,6 +4,7 @@ import os
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Optional
+from src.ai.azure_client import AzureAIClient
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException
@@ -74,6 +75,9 @@ def _get_cases_cache():
 # Global SAR candidates cache
 _SAR_CANDIDATES_CACHE = None
 
+# Global Azure AI client cache
+_AZURE_AI_CLIENT = None
+
 def _load_sar_candidates_cache():
     """Load ESCALATED cases and their SAR files into cache."""
     global _SAR_CANDIDATES_CACHE
@@ -83,10 +87,26 @@ def _load_sar_candidates_cache():
         for case in all_cases:
             if case.get('status') == 'ESCALATED' or case.get('recommendation') == 'SAR':
                 case_copy = _serialize_for_json(case)
+
                 sar_file = _find_sar_for_case(case_copy.get('case_id') or '')
                 if sar_file:
                     case_copy['sar_file'] = sar_file
+
+                try:
+                    ai_result = _get_ai_sar_suggestion(case_copy)
+                    case_copy["ai_sar_suggestion"] = ai_result.get("ai_sar_suggestion", "NO")
+                    case_copy["ai_sar_summary"] = ai_result.get(
+                        "ai_sar_summary",
+                        "AI did not provide a SAR assessment summary.",
+                    )
+                except Exception as exc:
+                    case_id = case_copy.get("case_id", "UNKNOWN")
+                    print(f"Warning: failed to get AI SAR suggestion for {case_id}: {exc}")
+                    case_copy["ai_sar_suggestion"] = "NO"
+                    case_copy["ai_sar_summary"] = "AI SAR assessment failed for this case."
+
                 candidates.append(case_copy)
+
         _SAR_CANDIDATES_CACHE = candidates
         return candidates
     except Exception as e:
@@ -645,3 +665,87 @@ def get_sar_report(case_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+#AI Suggestion Services
+def _get_azure_ai_client():
+    """Create and cache Azure AI wrapper client using config values."""
+    global _AZURE_AI_CLIENT
+
+    if _AZURE_AI_CLIENT is not None:
+        return _AZURE_AI_CLIENT
+
+    ai_cfg = CFG.get("rules", {}).get("cash_business_ai", {}) or {}
+
+    azure_endpoint = (ai_cfg.get("azure_endpoint") or "").strip().rstrip("/")
+    azure_api_key = (ai_cfg.get("azure_api_key") or "").strip()
+    azure_api_version = (ai_cfg.get("api_version") or "2025-01-01-preview").strip()
+    azure_deployment = (ai_cfg.get("deployment_name") or "").strip()
+
+    azure_temperature = float(ai_cfg.get("azure_temperature", 0.0))
+    azure_max_tokens = int(ai_cfg.get("azure_max_tokens", 300))
+    azure_timeout = int(ai_cfg.get("azure_timeout", 60))
+    azure_max_retries = int(ai_cfg.get("azure_max_retries", 3))
+
+    if not azure_endpoint or not azure_api_key or not azure_deployment:
+        raise ValueError(
+            "Missing Azure AI config under rules.cash_business_ai: "
+            f"azure_endpoint set={bool(azure_endpoint)}, "
+            f"azure_api_key set={bool(azure_api_key)}, "
+            f"azure_deployment set={bool(azure_deployment)}"
+        )
+
+    _AZURE_AI_CLIENT = AzureAIClient(
+        endpoint=azure_endpoint,
+        api_key=azure_api_key,
+        deployment=azure_deployment,
+        api_version=azure_api_version,
+        temperature=azure_temperature,
+        max_tokens=azure_max_tokens,
+        timeout=azure_timeout,
+        max_retries=azure_max_retries,
+    )
+
+    return _AZURE_AI_CLIENT
+
+def _normalize_ai_yes_no(text: str) -> str:
+    """Normalize model response to strict YES or NO."""
+    value = (text or "").strip().upper()
+    if value.startswith("YES"):
+        return "YES"
+    if value.startswith("NO"):
+        return "NO"
+    return "NO"
+
+def _get_ai_sar_suggestion(case_data: dict[str, Any]) -> dict[str, str]:
+    """Ask Azure AI whether this case should really be SAR flagged and return a short summary."""
+    client = _get_azure_ai_client()
+
+    payload = json.dumps(_serialize_for_json(case_data), ensure_ascii=False, default=str)
+
+    prompt = (
+        "Review the following AML investigation case data and decide whether the case "
+        "should really be SAR flagged.\n\n"
+        "Return only valid JSON with exactly these fields:\n"
+        "{\n"
+        '  "suggestion": "YES or NO",\n'
+        '  "summary": "Short one or two sentence explanation"\n'
+        "}\n\n"
+        "Rules:\n"
+        "- suggestion must be exactly YES or NO.\n"
+        "- summary must be concise and specific to the case.\n"
+        "- Do not include markdown, code fences, or extra text.\n\n"
+        f"Case data:\n{payload}"
+    )
+
+    ai_response = client.generate(prompt)
+
+    suggestion = _normalize_ai_yes_no(str(ai_response.get("suggestion", "")))
+    summary = str(ai_response.get("summary", "")).strip()
+
+    if not summary:
+        summary = "AI did not provide a SAR assessment summary."
+
+    return {
+        "ai_sar_suggestion": suggestion,
+        "ai_sar_summary": summary,
+    }
