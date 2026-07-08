@@ -324,7 +324,7 @@ export default function SAR() {
                     </p>
                   </div>
 
-                  {candidate.sanctions_hits && candidate.sanctions_hits.length > 0 && (
+                                    {candidate.sanctions_hits && candidate.sanctions_hits.length > 0 && (
                     <div className="mb-4 p-3 bg-danger-50 dark:bg-danger-900 border border-danger-200 dark:border-danger-700 rounded-lg">
                       <p className="text-sm font-semibold text-danger-900 dark:text-danger-100 mb-2 flex items-center gap-2">
                         <AlertTriangle className="w-4 h-4" />
@@ -337,6 +337,40 @@ export default function SAR() {
                       </ul>
                     </div>
                   )}
+
+                  {/* AI SAR Suggestion */}
+                  <div
+                    className={`mb-4 p-4 rounded-lg border ${
+                      candidate.ai_sar_suggestion === 'YES'
+                        ? 'bg-danger-50 dark:bg-danger-900 border-danger-200 dark:border-danger-700'
+                        : 'bg-success-50 dark:bg-success-900 border-success-200 dark:border-success-700'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                          AI SAR Assessment
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          Automated recommendation based on full case data
+                        </p>
+                      </div>
+
+                      <span
+                        className={`px-3 py-1 text-xs font-bold rounded-full ${
+                          candidate.ai_sar_suggestion === 'YES'
+                            ? 'bg-danger-100 dark:bg-danger-800 text-danger-700 dark:text-danger-200'
+                            : 'bg-success-100 dark:bg-success-800 text-success-700 dark:text-success-200'
+                        }`}
+                      >
+                        {candidate.ai_sar_suggestion || 'NO'}
+                      </span>
+                    </div>
+
+                    <div className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+                      {candidate.ai_sar_summary || 'No AI summary available.'}
+                    </div>
+                  </div>
 
                   {/* Action Button */}
                   <div className="flex gap-2">
