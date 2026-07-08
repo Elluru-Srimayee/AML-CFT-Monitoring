@@ -17,8 +17,10 @@ from src.risk_scoring.scorer import RiskScorer
 from src.alert_generation.alert_manager import AlertManager
 from src.investigation.case_builder import CaseBuilder
 from src.utils.helpers import load_config, ensure_dir
+from src.utils.logger import get_logger
 
 app = FastAPI(title="AML Monitoring API")
+log = get_logger(__name__)
 
 app.add_middleware(
     CORSMiddleware,
@@ -120,30 +122,74 @@ def _serialize_for_json(value: Any) -> Any:
     return value
 
 
-def _auto_generate_sar_reports(cases: list[Any]) -> list[str]:
-    """Generate SAR reports automatically for cases with sanctions hits."""
+def _auto_generate_sar_for_case(case: Any) -> Optional[str]:
+    """
+    Auto-generate SAR report for a single case if it has sanctions hits.
+    Returns the generated SAR file path, or None if not generated.
+    """
     from src.sar_reporting.sar_generator import SARGenerator
     from src.sar_reporting.sar_exporter import SARExporter
 
-    generator = SARGenerator(config_path="config/config.yaml")
-    exporter = SARExporter(config_path="config/config.yaml")
-    generated_files: list[str] = []
+    # Extract sanctions_hits and case_id
+    sanctions_hits = case.get("sanctions_hits") if isinstance(case, dict) else getattr(case, "sanctions_hits", None)
+    case_id = case.get("case_id") if isinstance(case, dict) else getattr(case, "case_id", None)
+    
+    if not case_id:
+        return None
+    
+    # Only generate SAR if there are sanctions hits
+    if not sanctions_hits:
+        return None
+    
+    # Check if SAR already exists for this case
+    existing_sar = _find_sar_for_case(case_id)
+    if existing_sar:
+        log.debug(f"SAR already exists for {case_id}: {existing_sar}")
+        return existing_sar
+    
+    try:
+        generator = SARGenerator(config_path="config/config.yaml")
+        exporter = SARExporter(config_path="config/config.yaml")
+        
+        log.info(f"Auto-generating SAR for sanctions case {case_id} (sanctions_hits={len(sanctions_hits)})")
+        sar_data = generator.generate(case)
+        sar_file = exporter.export(sar_data, case_id=case_id)
+        exporter.export_json(sar_data, case_id=case_id)
+        log.info(f"SAR generated successfully: {sar_file}")
+        return str(sar_file)
+    except Exception as exc:
+        log.warning(f"Failed to auto-generate SAR for sanctions case {case_id}: {exc}")
+        return None
 
+
+def _auto_generate_sar_reports(cases: list[Any]) -> list[str]:
+    """Generate SAR reports automatically for cases with sanctions hits."""
+    generated_files: list[str] = []
+    
     for case in cases:
-        sanctions_hits = case.get("sanctions_hits") if isinstance(case, dict) else getattr(case, "sanctions_hits", None)
-        if not sanctions_hits:
-            continue
-        try:
-            case_id = case.get("case_id") if isinstance(case, dict) else case.case_id
-            sar_data = generator.generate(case)
-            sar_file = exporter.export(sar_data, case_id=case_id)
-            exporter.export_json(sar_data, case_id=case_id)
-            generated_files.append(str(sar_file))
-        except Exception as exc:
-            # Don't break the pipeline if SAR generation fails for one case.
-            case_id = case.get("case_id") if isinstance(case, dict) else getattr(case, "case_id", "UNKNOWN")
-            print(f"Warning: failed to auto-generate SAR for {case_id}: {exc}")
+        sar_file = _auto_generate_sar_for_case(case)
+        if sar_file:
+            generated_files.append(sar_file)
+    
     return generated_files
+
+
+def _auto_generate_sar_reports_for_all_cases() -> int:
+    """
+    Scan all existing cases on disk and auto-generate SARs for any that:
+    - Have sanctions_hits populated
+    - Don't already have a SAR file
+    
+    Returns the count of SARs generated.
+    """
+    all_cases = _get_cases_cache()
+    generated_count = 0
+    
+    for case in all_cases:
+        if _auto_generate_sar_for_case(case):
+            generated_count += 1
+    
+    return generated_count
 
 
 def _find_sar_for_case(case_id: str) -> Optional[str]:
@@ -200,6 +246,13 @@ def run_pipeline(sample: Optional[int] = None, skip_sar: bool = False, alert_lim
 
         scorer = RiskScorer(config_path="config/config.yaml")
         scored_df = scorer.assign_tiers(scored_df)
+
+        if "sanctions_hit" in scored_df.columns:
+            scored_df["is_flagged"] = scored_df["is_flagged"] | scored_df["sanctions_hit"].astype(bool)
+            scored_df["risk_tier"] = scored_df.apply(
+                lambda row: "CRITICAL" if row.get("sanctions_hit") else row.get("risk_tier"),
+                axis=1,
+            )
 
         alert_mgr = AlertManager(config_path="config/config.yaml")
         alerts = alert_mgr.create_alerts(scored_df)
@@ -471,6 +524,9 @@ def generate_sar(request_data: dict):
         sar_file = exporter.export(sar, case_id=case_id)
         exporter.export_json(sar, case_id=case_id)
 
+        # Refresh SAR candidates cache so UI sees the new generated report immediately
+        _load_sar_candidates_cache()
+
         return {
             "success": True,
             "sar_file": str(sar_file),
@@ -481,6 +537,87 @@ def generate_sar(request_data: dict):
         raise HTTPException(status_code=404, detail="Case not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"SAR generation failed: {str(e)}")
+
+
+@app.post("/api/cases/{case_id}/whitelist")
+def whitelist_case(case_id: str):
+    """Mark a case as whitelisted (legitimate customer) by setting Is_laundering=0."""
+    try:
+        cb = CaseBuilder(full_df=None, config_path="config/config.yaml")
+        case_data = cb.load_case(case_id)
+        
+        # Get transaction IDs from the case
+        alerts = case_data.get('alerts', [])
+        if not alerts:
+            return {
+                "success": True,
+                "message": "Case whitelisted (no alerts)",
+                "case_id": case_id,
+                "whitelisted_count": 0,
+            }
+        
+        # Extract transaction indices
+        txn_indices = list(set(alert.get('txn_id') for alert in alerts if 'txn_id' in alert))
+        
+        # Update transactions CSV - mark as non-laundering
+        labeled_path = "data/outputs/transactions_labeled.csv"
+        if os.path.exists(labeled_path):
+            try:
+                df_labeled = pd.read_csv(labeled_path)
+                for idx in txn_indices:
+                    if idx < len(df_labeled):
+                        df_labeled.at[idx, 'Is_laundering'] = 0
+                df_labeled.to_csv(labeled_path, index=False)
+            except Exception as e:
+                print(f"Warning: Could not update transactions_labeled.csv: {e}")
+        
+        # Update case status to FALSE_POSITIVE
+        case_data['status'] = 'FALSE_POSITIVE'
+        cases_dir = CFG.get("investigation", {}).get("cases_dir")
+        if cases_dir:
+            case_file = Path(cases_dir) / f"{case_id}.json"
+            with open(case_file, 'w', encoding='utf-8') as f:
+                json.dump(_serialize_for_json(case_data), f, indent=2, default=str)
+        
+        # Refresh caches
+        _load_cases_cache()
+        _load_sar_candidates_cache()
+        
+        return {
+            "success": True,
+            "message": f"Case {case_id} whitelisted - marked as legitimate customer",
+            "case_id": case_id,
+            "whitelisted_count": len(txn_indices),
+        }
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Case {case_id} not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Whitelist operation failed: {str(e)}")
+
+
+@app.post("/api/sar/auto-generate-missing")
+def auto_generate_missing_sars():
+    """
+    Auto-generate missing SAR reports for all cases with sanctions hits.
+    Scans all existing cases and generates SARs for those that have sanctions_hits
+    but don't have a corresponding SAR file yet.
+    """
+    try:
+        log.info("Starting auto-generation of missing SAR reports for sanctions cases...")
+        generated_count = _auto_generate_sar_reports_for_all_cases()
+        
+        # Refresh SAR candidates cache
+        _load_sar_candidates_cache()
+        
+        log.info(f"Auto-generation complete: {generated_count} SAR(s) generated")
+        return {
+            "success": True,
+            "message": f"Auto-generated {generated_count} SAR report(s) for sanctions cases",
+            "generated_count": generated_count,
+        }
+    except Exception as e:
+        log.error(f"Auto-generation of missing SARs failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Auto-generation failed: {str(e)}")
 
 
 @app.get("/api/sar/{case_id}")

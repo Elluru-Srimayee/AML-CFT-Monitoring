@@ -26,6 +26,9 @@ from src.ai.azure_client import AzureAIClient
 from src.ai.cache_manager import CacheManager
 from src.ai.business_context_agent import BusinessContextAgent
 from src.rules_engine.parallel_mixin import ParallelExecutionMixin
+from src.utils.logger import get_logger
+
+log = get_logger(__name__)
 
 
 class CashBusinessAIRule(ParallelExecutionMixin, BaseRule):
@@ -52,21 +55,39 @@ class CashBusinessAIRule(ParallelExecutionMixin, BaseRule):
             config.get("max_parallel_workers", 8)
         )
 
-        self.azure = AzureAIClient(
-            endpoint=config["azure_endpoint"],
-            api_key=config["azure_api_key"],
-            deployment=config["deployment_name"],
-            api_version=config.get(
-                "api_version",
-                "2025-01-01-preview",
-            ),
-        )
+        self.azure = None
+        self.cache = None
+        self.agent = None
+        self._ai_available = False
+        self._ai_error = None
 
-        self.cache = CacheManager()
-        self.agent = BusinessContextAgent(
-            self.azure,
-            self.cache,
-        )
+        required_keys = ["azure_endpoint", "azure_api_key", "deployment_name"]
+        missing = [key for key in required_keys if not str(config.get(key, "")).strip()]
+        if missing:
+            self._ai_error = (
+                f"CashBusinessAI unavailable: missing config values for {', '.join(missing)}"
+            )
+            log.warning(self._ai_error)
+        else:
+            try:
+                self.azure = AzureAIClient(
+                    endpoint=config["azure_endpoint"],
+                    api_key=config["azure_api_key"],
+                    deployment=config["deployment_name"],
+                    api_version=config.get(
+                        "api_version",
+                        "2025-01-01-preview",
+                    ),
+                )
+                self.cache = CacheManager()
+                self.agent = BusinessContextAgent(
+                    self.azure,
+                    self.cache,
+                )
+                self._ai_available = True
+            except Exception as exc:
+                self._ai_error = f"CashBusinessAI unavailable: {exc}"
+                log.warning(self._ai_error)
 
         # Load customer master for sender/receiver lookups (optional)
         try:
@@ -106,7 +127,7 @@ class CashBusinessAIRule(ParallelExecutionMixin, BaseRule):
         AI calls are parallelized across unique profile/payment combinations.
         """
 
-        if not self.enabled:
+        if not self.enabled or not self._ai_available:
             return self._result([], {})
 
         if df is None or df.empty:

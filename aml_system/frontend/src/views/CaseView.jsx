@@ -115,7 +115,7 @@ export default function CaseView() {
           <p className="text-sm font-semibold mb-3">Customer profile</p>
           <div className="grid gap-3">
             {profile.full_name && <div className="key-value-row"><span>Name</span><span>{profile.full_name}</span></div>}
-            {profile.risk_category && <div className="key-value-row"><span>Risk category</span><span>{profile.risk_category}</span></div>}
+            {/* {profile.risk_category && <div className="key-value-row"><span>Risk category</span><span>{profile.risk_category}</span></div>} */}
             {profile.unique_counterparties != null && <div className="key-value-row"><span>Unique counterparties</span><span>{profile.unique_counterparties}</span></div>}
             {profile.payment_types_used?.length > 0 && <div className="key-value-row"><span>Payment methods</span><span>{profile.payment_types_used.join(', ')}</span></div>}
             {profile.countries_involved?.length > 0 && <div className="key-value-row"><span>Countries</span><span>{profile.countries_involved.join(', ')}</span></div>}

@@ -120,6 +120,13 @@ def main() -> None:
     engine = RulesEngine(config_path=args.config)
     scored_df = engine.run(df)
 
+    if "sanctions_hit" in scored_df.columns:
+        scored_df["is_flagged"] = scored_df["is_flagged"] | scored_df["sanctions_hit"].astype(bool)
+        scored_df["risk_tier"] = scored_df.apply(
+            lambda row: "CRITICAL" if row.get("sanctions_hit") else row.get("risk_tier"),
+            axis=1,
+        )
+
     rule_summary = engine.summary(scored_df)
     print("\n  Rule Trigger Summary:")
     for rule, count in rule_summary.items():

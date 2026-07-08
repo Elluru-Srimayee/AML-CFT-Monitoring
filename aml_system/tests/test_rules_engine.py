@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from src.alert_generation.alert_manager import Alert
 from src.investigation.case_builder import CaseBuilder
 from src.ingestion.loader import enrich_with_customer_data
+from src.rules_engine.engine import RulesEngine
 from src.rules_engine.rule_large_txn import LargeTransactionRule
 from src.rules_engine.rule_high_risk_country import HighRiskCountryRule
 from src.rules_engine.rule_layering import LayeringRule
@@ -42,6 +43,47 @@ def make_txn_df(rows: list[dict]) -> pd.DataFrame:
     return pd.DataFrame(data)
 
 
+def test_cash_business_ai_missing_azure_config_does_not_crash():
+    config = {
+        "enabled": True,
+        "score": 15,
+        "deviation_multiplier": 1.5,
+        "minimum_confidence": 0.80,
+    }
+
+    rule = CashBusinessAIRule(config)
+    df = make_txn_df([{"Amount": 5000.0}])
+    result = rule.apply(df)
+
+    assert result.triggered_indices == []
+
+
+def test_rules_engine_escalates_sanction_hits_before_rule_scoring(monkeypatch):
+    df = make_txn_df([{"Amount": 1000.0}])
+    engine = RulesEngine(config_path="config/config.yaml")
+
+    monkeypatch.setattr(
+        engine.sanctions_checker,
+        "check_accounts",
+        lambda entities: [
+            {
+                "query": entities[0],
+                "matched_entity": "SanctionEntity",
+                "score": 100,
+                "risk_score": 100,
+                "list_type": "SDN",
+                "country": "US",
+            }
+        ],
+    )
+
+    scored_df = engine.run(df)
+
+    assert bool(scored_df.loc[0, "sanctions_hit"]) is True
+    assert scored_df.loc[0, "triggered_rules"] == "Sanctions"
+    assert scored_df.loc[0, "total_risk_score"] == 100
+
+
 # ── LargeTransactionRule Tests ────────────────────────────────────────────────
 
 class TestLargeTransactionRule:
@@ -65,7 +107,18 @@ class TestLargeTransactionRule:
 
     def test_score_correct(self):
         result = self.rule.apply(make_txn_df([{"Amount": 20000.0}]))
-        assert result.score == 25
+        assert result.score[0] == 20
+
+    def test_score_uses_configured_multiplier_tiers(self):
+        cfg = {
+            "enabled": True,
+            "score": 10,
+            "threshold_usd": 10000,
+            "score_tiers": {"1": 10, "5": 20, "10": 30, "15": 50},
+        }
+        rule = LargeTransactionRule(cfg)
+        result = rule.apply(make_txn_df([{"Amount": 200000.0}]))
+        assert result.score[0] == 50
 
     def test_reason_contains_amount(self):
         df = make_txn_df([{"Amount": 50000.0}])

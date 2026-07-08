@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { FileText, Download, CheckCircle, AlertTriangle, Loader, RefreshCw } from 'lucide-react'
-import { fetchSARCandidates, generateSAR } from '../api'
+import { FileText, Download, CheckCircle, AlertTriangle, Loader, RefreshCw, Shield } from 'lucide-react'
+import { fetchSARCandidates, generateSAR, whitelistCase } from '../api'
 
 const SAR_CACHE_KEY = 'aml_sar_candidates_cache'
 const SAR_CACHE_TIMESTAMP_KEY = 'aml_sar_candidates_timestamp'
@@ -10,6 +10,7 @@ export default function SAR() {
   const [candidates, setCandidates] = useState([])
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState({})
+  const [whitelisting, setWhitelisting] = useState({})
   const [error, setError] = useState('')
   const [generated, setGenerated] = useState({})
   const [selectedFilter, setSelectedFilter] = useState('all')
@@ -57,7 +58,7 @@ export default function SAR() {
       const data = await fetchSARCandidates()
       const candidatesData = data.candidates || data.sar_candidates || []
       setCandidates(candidatesData)
-      setGenerated(buildGeneratedMap(candidatesData))
+      setGenerated(prev => ({ ...prev, ...buildGeneratedMap(candidatesData) }))
       setIsCached(false)
 
       localStorage.setItem(SAR_CACHE_KEY, JSON.stringify(candidatesData))
@@ -112,8 +113,8 @@ export default function SAR() {
           ...prev,
           [caseId]: result.sar_file || result.filename,
         }))
-        // Refresh cache after generating SAR
-        setTimeout(() => loadCandidates(true), 500)
+        // Refresh cache after generating SAR so the new SAR file is reflected in the candidate list
+        await loadCandidates(true)
       } else {
         setError(`Failed to generate SAR for ${caseId}`)
       }
@@ -122,6 +123,25 @@ export default function SAR() {
       console.error(err)
     } finally {
       setGenerating(prev => ({ ...prev, [caseId]: false }))
+    }
+  }
+
+  async function handleWhitelistCase(caseId) {
+    setWhitelisting(prev => ({ ...prev, [caseId]: true }))
+    try {
+      const result = await whitelistCase(caseId)
+      if (result.success) {
+        setError('')
+        // Remove from candidates list after whitelisting
+        setCandidates(candidates.filter(c => c.case_id !== caseId))
+      } else {
+        setError(`Failed to whitelist case ${caseId}`)
+      }
+    } catch (err) {
+      setError(`Error whitelisting case: ${err.message}`)
+      console.error(err)
+    } finally {
+      setWhitelisting(prev => ({ ...prev, [caseId]: false }))
     }
   }
 
@@ -338,7 +358,7 @@ export default function SAR() {
                     </div>
                   )}
 
-                  {/* Action Button */}
+                  {/* Action Buttons */}
                   <div className="flex gap-2">
                     {(generated[candidate.case_id] || candidate.sar_file) ? (
                       <Link
@@ -353,23 +373,41 @@ export default function SAR() {
                           </p>
                         </div>
                       </Link>
-                    ) : (                      <button
-                        onClick={() => handleGenerateSAR(candidate.case_id)}
-                        disabled={generating[candidate.case_id]}
-                        className="btn-primary flex items-center gap-2 flex-1 justify-center disabled:opacity-50"
-                      >
-                        {generating[candidate.case_id] ? (
-                          <>
-                            <Loader className="w-4 h-4 animate-spin" />
-                            Generating...
-                          </>
-                        ) : (
-                          <>
-                            <Download className="w-4 h-4" />
-                            Generate SAR Report
-                          </>
-                        )}
-                      </button>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => handleGenerateSAR(candidate.case_id)}
+                          disabled={generating[candidate.case_id] || whitelisting[candidate.case_id]}
+                          className="btn-primary flex items-center gap-2 flex-1 justify-center disabled:opacity-50"
+                        >
+                          {generating[candidate.case_id] ? (
+                            <>
+                              <Loader className="w-4 h-4 animate-spin" />
+                              Generating...
+                            </>
+                          ) : (
+                            <>
+                              <Download className="w-4 h-4" />
+                              Generate SAR Report
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => handleWhitelistCase(candidate.case_id)}
+                          disabled={whitelisting[candidate.case_id] || generating[candidate.case_id]}
+                          className="flex items-center gap-2 px-4 py-3 rounded-lg bg-success-100 dark:bg-success-900 border border-success-200 dark:border-success-700 hover:bg-success-200 dark:hover:bg-success-800 disabled:opacity-50 transition-colors text-success-900 dark:text-success-100 font-semibold"
+                          title="Mark as legitimate customer - sets Is_laundering=0"
+                        >
+                          {whitelisting[candidate.case_id] ? (
+                            <>
+                              <Loader className="w-4 h-4 animate-spin" />
+                            </>
+                          ) : (
+                            <Shield className="w-4 h-4" />
+                          )}
+                          <span className="hidden sm:inline">{whitelisting[candidate.case_id] ? 'Whitelisting...' : 'Whitelist'}</span>
+                        </button>
+                      </>
                     )}
                   </div>
 

@@ -27,6 +27,11 @@ rules:
       GBP: 8000
       "UK pounds": 8000
     score: 15
+    score_tiers:
+      "1": 10
+      "5": 20
+      "10": 30
+      "15": 50
 
   high_risk_country:
     enabled: true

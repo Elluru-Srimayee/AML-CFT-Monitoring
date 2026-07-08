@@ -69,6 +69,14 @@ export async function fetchSARCandidatesList(offset = 0, limit = 50, riskTier = 
   return handleResponse(res)
 }
 
+export async function whitelistCase(caseId) {
+  const res = await fetch(`${API_BASE}/api/cases/${caseId}/whitelist`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  })
+  return res.json()
+}
+
 export async function generateSAR(caseId) {
   const res = await fetch(`${API_BASE}/api/sar/generate`, {
     method: 'POST',

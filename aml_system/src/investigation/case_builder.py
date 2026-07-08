@@ -18,7 +18,6 @@ from src.alert_generation.alert_manager import Alert
 from src.investigation.customer_profiler import CustomerProfile, CustomerProfiler
 from src.investigation.pattern_analyzer import PatternFinding, PatternAnalyzer
 from src.investigation.sanctions_checker import SanctionsChecker
-from src.risk_scoring.scorer import RiskScorer
 from src.utils.helpers import (
     generate_case_id,
     load_config,
@@ -186,17 +185,17 @@ class CaseBuilder:
             account, alerts, profile, sanctions_hits, finding_descs
         )
 
-        # Apply a sanction hit bonus to the case risk score
-        sanction_bonus = 90 if sanctions_hits else 0
+        sanction_bonus = 100 if sanctions_hits else 0
         case_risk_score = max_score + sanction_bonus
-        case_risk_tier = RiskScorer(config_path="config/config.yaml")._score_to_tier(case_risk_score)
+        # Cap risk score at 100 for display purposes
+        case_risk_score = min(case_risk_score, 100)
 
         # Determine recommendation
         has_sanctions = len(sanctions_hits) > 0
-        if case_risk_tier in self.auto_escalate_tiers or has_sanctions:
+        if best_tier in self.auto_escalate_tiers or has_sanctions:
             status = "ESCALATED"
             recommendation = "SAR"
-        elif case_risk_tier == "HIGH":
+        elif best_tier == "HIGH":
             status = "OPEN"
             recommendation = "SAR"
         else:
@@ -208,7 +207,7 @@ class CaseBuilder:
             created_at=now_utc().isoformat(),
             status=status,
             subject_account=account,
-            risk_tier=case_risk_tier,
+            risk_tier=best_tier,
             risk_score=case_risk_score,
             triggered_rules=sorted(rules),
             alerts=[asdict(a) for a in alerts],

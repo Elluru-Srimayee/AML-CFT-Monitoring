@@ -22,7 +22,12 @@ def make_txn_df(rows):
     return pd.DataFrame(rows)
 
 
-def make_alert(account_id: str, receiver_account: str) -> Alert:
+def make_alert(
+    account_id: str,
+    receiver_account: str,
+    risk_score: int = 25,
+    risk_tier: str = "MEDIUM",
+) -> Alert:
     return Alert(
         alert_id="ALT-TEST",
         txn_id=1,
@@ -34,8 +39,8 @@ def make_alert(account_id: str, receiver_account: str) -> Alert:
         sender_location="United States",
         receiver_location="United States",
         payment_type="Wire",
-        risk_tier="MEDIUM",
-        risk_score=25,
+        risk_tier=risk_tier,
+        risk_score=risk_score,
         triggered_rules="LargeTransaction",
         rule_reasons="Test reason",
         is_laundering_gt=0,
@@ -91,6 +96,59 @@ def test_customer_profile_loads_customer_details_and_enriches_profile():
         assert profile.government_id == "Passport: P123456"
         assert profile.risk_category == "CLEAN"
         assert profile.risk_score == 5
+    finally:
+        os.unlink(detail_path)
+        os.unlink(config_path)
+
+
+def test_case_builder_escalates_when_risk_score_hits_threshold():
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as detail_file:
+        detail_file.write(
+            "Customer Id,Account Number,Full Name,Date of Birth,Occupation,Complete Address,Total Income Per Annum,Passport/Gov ID Proof,Is_Flagged,Flag_Type,Flag_Reason,Risk_Category,Risk_Score\n"
+            "CUST000001,1234567890,John Doe,01-01-1980,Entrepreneur,1 Main St,500000,Passport: P123456,False,NONE,,CLEAN,5\n"
+        )
+        detail_path = detail_file.name
+
+    config = {
+        "investigation": {
+            "cases_dir": "data/outputs/cases",
+            "sanctions_file": "config/sanction_list.csv",
+            "customer_details_file": detail_path,
+            "fuzzy_match_threshold": 80,
+            "auto_escalate_tiers": ["CRITICAL"],
+            "manual_review_tiers": ["HIGH"],
+        }
+    }
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as cfg_file:
+        yaml.dump(config, cfg_file)
+        config_path = cfg_file.name
+
+    try:
+        reload_config(config_path)
+        df = make_txn_df([
+            {
+                "Txn_id": 1,
+                "Timestamp": datetime(2024, 1, 1),
+                "Sender_account": "1234567890",
+                "Receiver_account": "9999999999",
+                "Amount": 15000.0,
+                "Payment_currency": "USD",
+                "Received_currency": "USD",
+                "Sender_bank_location": "United States",
+                "Receiver_bank_location": "United States",
+                "Payment_type": "Wire",
+                "Is_laundering": 0,
+                "Laundering_type": "",
+            }
+        ])
+        alert = make_alert("1234567890", "9999999999", risk_score=100, risk_tier="MEDIUM")
+        builder = CaseBuilder(df, config_path=config_path)
+        cases = builder.build_cases([alert])
+
+        assert len(cases) == 1
+        assert cases[0].status == "ESCALATED"
+        assert cases[0].recommendation == "SAR"
     finally:
         os.unlink(detail_path)
         os.unlink(config_path)

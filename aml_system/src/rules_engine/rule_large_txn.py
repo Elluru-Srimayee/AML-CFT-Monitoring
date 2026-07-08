@@ -23,6 +23,21 @@ class LargeTransactionRule(BaseRule):
             str(k).strip().upper(): float(v)
             for k, v in config.get("thresholds_by_currency", {}).items()
         }
+        self.score_tiers = self._parse_score_tiers(config.get("score_tiers", {}))
+
+    def _parse_score_tiers(self, config_tiers: dict | list | None) -> list[tuple[float, int]]:
+        if isinstance(config_tiers, dict):
+            return sorted(((float(k), int(v)) for k, v in config_tiers.items()), key=lambda item: item[0])
+        if isinstance(config_tiers, list):
+            tiers = []
+            for item in config_tiers:
+                if isinstance(item, dict):
+                    try:
+                        tiers.append((float(item.get("multiplier", 0)), int(item.get("score", 0))))
+                    except (TypeError, ValueError):
+                        continue
+            return sorted(tiers, key=lambda item: item[0])
+        return []
 
     def _threshold_for_currency(self, currency: str) -> float:
         return self.thresholds_by_currency.get(str(currency).strip().upper(), self.default_threshold)
@@ -36,13 +51,30 @@ class LargeTransactionRule(BaseRule):
         mask = df["Amount"] > thresholds
         triggered = df.index[mask].tolist()
 
-        reasons = {
-            idx: (
-                f"Transaction amount {df.at[idx, 'Amount']:,.2f} "
-                f"{df.at[idx, 'Payment_currency']} exceeds threshold "
-                f"of {thresholds.at[idx]:,.2f}"
-            )
-            for idx in triggered
-        }
+        reasons = {}
+        score_map: dict[int, int] = {}
 
-        return self._result(triggered, reasons)
+        for idx in triggered:
+            amount = float(df.at[idx, "Amount"])
+            threshold = float(thresholds.at[idx])
+            multiplier = amount / threshold if threshold > 0 else 0.0
+            if self.score_tiers:
+                score_value = self.score
+                for tier_multiplier, tier_score in self.score_tiers:
+                    if multiplier >= tier_multiplier:
+                        score_value = tier_score
+                    else:
+                        break
+                score_map[idx] = int(score_value)
+                reasons[idx] = (
+                    f"Transaction amount {amount:,.2f} {df.at[idx, 'Payment_currency']} "
+                    f"exceeds threshold of {threshold:,.2f} (x{multiplier:.2f}) -> +{score_value} pts"
+                )
+            else:
+                score_map[idx] = int(self.score)
+                reasons[idx] = (
+                    f"Transaction amount {amount:,.2f} {df.at[idx, 'Payment_currency']} exceeds threshold "
+                    f"of {threshold:,.2f}"
+                )
+
+        return self._result(triggered, reasons, score_map if self.score_tiers else self.score)

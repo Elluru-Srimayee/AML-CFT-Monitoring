@@ -29,6 +29,11 @@ def test_cases_list():
         assert 'cases' in data
 
 
+def test_auto_generate_sar_for_case_with_sanctions_uses_logger():
+    case = {"case_id": "case-1", "sanctions_hits": [{"query": "abc"}]}
+    assert server._auto_generate_sar_for_case(case) is None
+
+
 def test_run_pipeline_smoke():
     # run with a small sample to smoke test pipeline
     r = client.get('/api/run?sample=10')

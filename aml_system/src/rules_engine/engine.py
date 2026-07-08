@@ -21,6 +21,7 @@ from src.rules_engine.rule_large_txn import LargeTransactionRule
 from src.rules_engine.rule_layering import LayeringRule
 from src.rules_engine.rule_rapid_movement import RapidMovementRule
 from src.rules_engine.rule_smurfing import SmurfingRule
+from src.investigation.sanctions_checker import SanctionsChecker
 from src.utils.helpers import load_config
 from src.utils.logger import get_logger
 from src.rules_engine.rule_cash_business_ai import CashBusinessAIRule
@@ -45,6 +46,7 @@ class RulesEngine:
         # parallelism config for rule-level execution
         engine_cfg = cfg.get("engine", {})
         self.max_rule_workers = int(engine_cfg.get("max_rule_workers", 4))
+        self.sanctions_checker = SanctionsChecker(config_path)
 
         # ── Instantiate all rules ─────────────────────────────────────
         self.rules = [
@@ -86,12 +88,23 @@ class RulesEngine:
         result_df["total_risk_score"] = 0
         result_df["triggered_rules"] = ""
         result_df["rule_reasons"] = ""
+        result_df["sanctions_hit"] = False
+        result_df["sanctions_reason"] = ""
+        result_df["rule_Sanctions"] = False
+        result_df["rule_Sanctions_reason"] = ""
+
+        sanction_indices = self._apply_sanctions_precheck(result_df)
+        rule_input_df = result_df.loc[~result_df.index.isin(sanction_indices)].copy()
 
         # Build list of enabled rules
         enabled_rules = [r for r in self.rules if r.enabled]
 
         if not enabled_rules:
             log.info("No enabled rules to run.")
+            return result_df
+
+        if rule_input_df.empty:
+            log.info("Sanctions precheck flagged every transaction; skipping rule evaluation.")
             return result_df
 
         # Submit rules in parallel
@@ -103,7 +116,7 @@ class RulesEngine:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             for rule in enabled_rules:
                 # Submit rule.apply with a copy of the DataFrame to avoid shared mutations
-                futures_map[executor.submit(self._safe_apply, rule, result_df.copy())] = rule
+                futures_map[executor.submit(self._safe_apply, rule, rule_input_df.copy())] = rule
 
             # Progress bar over the number of rules
             pbar = tqdm(total=len(futures_map), desc="Applying rules", unit="rule")
@@ -151,6 +164,76 @@ class RulesEngine:
             # Return a neutral result object with expected attributes
             return SimpleNamespace(triggered_indices=[], reasons={}, score=0)
 
+    def _apply_sanctions_precheck(self, result_df: pd.DataFrame) -> list[int]:
+        """Flag transactions with sanctions hits before the normal rule evaluation runs."""
+        sanction_indices: list[int] = []
+        if result_df.empty:
+            return sanction_indices
+
+        for idx, row in result_df.iterrows():
+            # Collect candidate entities to check against the watchlist.
+            # Include accounts, visible names, and government ID fields if present
+            entities = []
+            for col in ("Sender_account", "Receiver_account"):
+                value = row.get(col)
+                if pd.notna(value) and str(value).strip():
+                    entities.append(str(value).strip())
+
+            # Common name and ID fields that may be present after customer enrichment
+            extra_fields = [
+                "Full Name",
+                "Full_Name",
+                "full_name",
+                "Name",
+                "Account Holder",
+                "Passport/Gov ID Proof",
+                "Passport",
+                "Gov ID",
+                "government_id",
+                "Government ID",
+            ]
+            for f in extra_fields:
+                if f in result_df.columns:
+                    v = row.get(f)
+                    if pd.notna(v) and str(v).strip():
+                        entities.append(str(v).strip())
+
+            # dedupe and preserve order
+            seen_e = set()
+            entities = [e for e in entities if e and not (e in seen_e or seen_e.add(e))]
+
+            if not entities:
+                continue
+
+            hits = self.sanctions_checker.check_accounts(entities)
+            if not hits:
+                continue
+
+            hit = hits[0]
+            score = int(hit.get("risk_score", 100) or 100)
+            reason = (
+                f"Sanctions match for {hit.get('matched_entity', hit.get('query', 'unknown'))} "
+                f"({hit.get('list_type', 'Unknown')})"
+            )
+
+            result_df.at[idx, "sanctions_hit"] = True
+            result_df.at[idx, "sanctions_reason"] = reason
+            result_df.at[idx, "rule_Sanctions"] = True
+            result_df.at[idx, "rule_Sanctions_reason"] = reason
+            result_df.at[idx, "total_risk_score"] += score
+            result_df.at[idx, "triggered_rules"] = (
+                f"Sanctions" if not result_df.at[idx, "triggered_rules"] else f"{result_df.at[idx, 'triggered_rules']}|Sanctions"
+            )
+            result_df.at[idx, "rule_reasons"] = reason
+            sanction_indices.append(idx)
+
+        if sanction_indices:
+            log.info(
+                f"Sanctions precheck flagged {len(sanction_indices):,} transaction(s) for immediate escalation"
+            )
+
+        return sanction_indices
+
     def _merge_rule_result(self, result_df: pd.DataFrame, rule, rule_result: RuleResult) -> None:
         """
         Merge a single rule's result into the shared result_df.
@@ -169,13 +252,17 @@ class RulesEngine:
         # Normalize triggered indices
         triggered = getattr(rule_result, "triggered_indices", []) or []
         reasons_map = getattr(rule_result, "reasons", {}) or {}
-        score = int(getattr(rule_result, "score", 0) or 0)
+        score = getattr(rule_result, "score", 0) or 0
 
         if triggered:
             valid_indices = [i for i in triggered if i in result_df.index]
             if valid_indices:
                 result_df.loc[valid_indices, col_flag] = True
-                result_df.loc[valid_indices, "total_risk_score"] += score
+                if isinstance(score, dict):
+                    for idx in valid_indices:
+                        result_df.at[idx, "total_risk_score"] += int(score.get(idx, 0) or 0)
+                else:
+                    result_df.loc[valid_indices, "total_risk_score"] += int(score)
 
                 for idx in valid_indices:
                     reason = reasons_map.get(idx, rule.description)
@@ -193,10 +280,16 @@ class RulesEngine:
                         f"{existing_r}; {reason}" if existing_r else reason
                     )
 
-                log.info(
-                    f"  ✓ {rule.name}: {len(valid_indices):,} transactions flagged "
-                    f"(+{score} pts each)"
-                )
+                if isinstance(score, dict):
+                    log.info(
+                        f"  ✓ {rule.name}: {len(valid_indices):,} transactions flagged "
+                        f"(varied per-row points)"
+                    )
+                else:
+                    log.info(
+                        f"  ✓ {rule.name}: {len(valid_indices):,} transactions flagged "
+                        f"(+{int(score)} pts each)"
+                    )
             else:
                 log.info(f"  ✓ {rule.name}: 0 valid transactions flagged")
         else:

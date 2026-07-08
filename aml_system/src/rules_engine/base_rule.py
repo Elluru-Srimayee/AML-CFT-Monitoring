@@ -18,7 +18,7 @@ class RuleResult:
     """Outcome of applying one rule to the dataset."""
     rule_name: str
     triggered_indices: list[int]        # DataFrame indices that triggered
-    score: int                          # Points added to risk score per trigger
+    score: int | dict[int, int]         # Points added to risk score per trigger or per-index map
     reasons: dict[int, str] = field(default_factory=dict)   # index → human reason
 
     def __len__(self) -> int:
@@ -64,11 +64,12 @@ class BaseRule(ABC):
         self,
         triggered_indices: list[int],
         reasons: dict[int, str] | None = None,
+        score: int | dict[int, int] | None = None,
     ) -> RuleResult:
         """Convenience factory for sub-classes."""
         return RuleResult(
             rule_name=self.name,
             triggered_indices=triggered_indices,
-            score=self.score,
+            score=self.score if score is None else score,
             reasons=reasons or {},
         )

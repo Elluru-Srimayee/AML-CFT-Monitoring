@@ -39,3 +39,11 @@ def test_sanctions_checker_matches_alias_beyond_primary_row_count():
     hits = checker.check_accounts([later_alias])
     assert hits, f"Expected a sanction match for alias {later_alias}"
     assert hits[0]["matched_entity"], "Expected matched_entity in the result"
+
+
+def test_sanctions_checker_returns_risk_score_for_matches():
+    reload_config("config/config.yaml")
+    checker = SanctionsChecker(config_path="config/config.yaml")
+    hits = checker.check_accounts(["Abdul Hamid Al-Yemeni"])
+    assert hits
+    assert hits[0]["risk_score"] == 100
